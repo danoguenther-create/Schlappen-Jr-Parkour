@@ -27,6 +27,7 @@
     <b>Schlappen Jr. Parkour - Physics Test</b><br>
     WASD = Laufen &nbsp; Shift = Sprinten<br>
     Space = Springen &nbsp; Doppel-Space = Frontflip<br>
+    An Kante: W = Hochziehen &nbsp; Space/S = Loslassen<br>
     Maus = Kamera &nbsp; R = Reset Position
   </div>
   <div id="crosshair"></div>
@@ -228,6 +229,12 @@
     window.addEventListener('keydown', (e) => {
       if (e.repeat) return;
       keys[e.code] = true;
+      if (playerState === 'hanging') {
+        if (e.code === 'KeyW') startClimb();
+        else if (e.code === 'Space' || e.code === 'KeyS') releaseLedge();
+        return;
+      }
+      if (playerState === 'climbing') return;
       if (e.code === 'Space') tryJumpOrFlip();
       if (e.code === 'KeyR') {
         playerPos.copy(startPos);
@@ -235,6 +242,7 @@
         isFlipping = false;
         flipAngle = 0;
         bodyGroup.rotation.x = 0;
+        playerState = 'normal';
       }
     });
     window.addEventListener('keyup', (e) => { keys[e.code] = false; });
@@ -247,6 +255,113 @@
     const AIR_CONTROL = 0.4;
     const GROUND_FRICTION = 12;
     const FLIP_SPEED = Math.PI * 3.2;
+
+    // ---------- Ledge grab / climb ----------
+    let playerState = 'normal'; // 'normal' | 'hanging' | 'climbing'
+    let hangCollider = null;
+    let hangFace = '';
+    let climbT = 0;
+    const CLIMB_DURATION = 0.55;
+    const climbStart = new THREE.Vector3();
+    const climbTop = new THREE.Vector3();
+    const climbTarget = new THREE.Vector3();
+    const HAND_HEIGHT = 1.5;       // hand offset from feet
+    const GRAB_VERTICAL_TOL = 0.35;
+    const GRAB_PROBE = PLAYER_RADIUS + 0.25;
+
+    function tryLedgeGrab() {
+      if (playerState !== 'normal') return;
+      if (isFlipping) return;
+      if (velocity.y > 3) return; // only when not strongly rising
+
+      const facing = player.rotation.y;
+      const fx = Math.sin(facing);
+      const fz = Math.cos(facing);
+      const handY = playerPos.y + HAND_HEIGHT;
+
+      for (const c of colliders) {
+        const top = c.max.y;
+        if (Math.abs(handY - top) > GRAB_VERTICAL_TOL) continue;
+
+        const probeX = playerPos.x + fx * GRAB_PROBE;
+        const probeZ = playerPos.z + fz * GRAB_PROBE;
+        if (probeX < c.min.x || probeX > c.max.x) continue;
+        if (probeZ < c.min.z || probeZ > c.max.z) continue;
+
+        const insideX = playerPos.x > c.min.x && playerPos.x < c.max.x;
+        const insideZ = playerPos.z > c.min.z && playerPos.z < c.max.z;
+        if (insideX && insideZ) continue;
+
+        // Ensure space above the ledge is free for the pull-up target
+        const aboveY = top + 0.05;
+        const aboveAABB = {
+          min: new THREE.Vector3(probeX - PLAYER_RADIUS, aboveY, probeZ - PLAYER_RADIUS),
+          max: new THREE.Vector3(probeX + PLAYER_RADIUS, aboveY + PLAYER_HEIGHT, probeZ + PLAYER_RADIUS),
+        };
+        let blocked = false;
+        for (const o of colliders) {
+          if (o === c) continue;
+          if (aabbOverlap(aboveAABB, o)) { blocked = true; break; }
+        }
+        if (blocked) continue;
+
+        // Determine which face was grabbed
+        let face;
+        const distXNeg = c.min.x - playerPos.x;
+        const distXPos = playerPos.x - c.max.x;
+        const distZNeg = c.min.z - playerPos.z;
+        const distZPos = playerPos.z - c.max.z;
+        const dx = Math.max(distXNeg, distXPos);
+        const dz = Math.max(distZNeg, distZPos);
+        if (dx >= dz) {
+          face = playerPos.x < c.min.x ? 'xneg' : 'xpos';
+        } else {
+          face = playerPos.z < c.min.z ? 'zneg' : 'zpos';
+        }
+
+        // Snap player to ledge
+        playerPos.y = top - HAND_HEIGHT;
+        if (face === 'xneg') {
+          playerPos.x = c.min.x - PLAYER_RADIUS - 0.001;
+          player.rotation.y = Math.PI / 2;
+        } else if (face === 'xpos') {
+          playerPos.x = c.max.x + PLAYER_RADIUS + 0.001;
+          player.rotation.y = -Math.PI / 2;
+        } else if (face === 'zneg') {
+          playerPos.z = c.min.z - PLAYER_RADIUS - 0.001;
+          player.rotation.y = 0;
+        } else {
+          playerPos.z = c.max.z + PLAYER_RADIUS + 0.001;
+          player.rotation.y = Math.PI;
+        }
+        velocity.set(0, 0, 0);
+        playerState = 'hanging';
+        hangCollider = c;
+        hangFace = face;
+        return;
+      }
+    }
+
+    function startClimb() {
+      if (!hangCollider) return;
+      climbStart.copy(playerPos);
+      climbTop.set(playerPos.x, hangCollider.max.y + 0.001, playerPos.z);
+      climbTarget.copy(climbTop);
+      const inset = PLAYER_RADIUS + 0.35;
+      if (hangFace === 'xneg') climbTarget.x = hangCollider.min.x + inset;
+      else if (hangFace === 'xpos') climbTarget.x = hangCollider.max.x - inset;
+      else if (hangFace === 'zneg') climbTarget.z = hangCollider.min.z + inset;
+      else climbTarget.z = hangCollider.max.z - inset;
+      climbT = 0;
+      playerState = 'climbing';
+    }
+
+    function releaseLedge() {
+      playerState = 'normal';
+      hangCollider = null;
+      // small drop-off impulse so we don't immediately re-grab
+      velocity.set(0, -2, 0);
+    }
 
     function playerAABB(pos) {
       return {
@@ -287,8 +402,52 @@
     // Animation helpers
     let walkPhase = 0;
 
+    function setHangingPose() {
+      bodyGroup.rotation.x = 0;
+      legL.rotation.x = 0.15;
+      legR.rotation.x = -0.15;
+      armL.rotation.x = -2.4; // arms reach up to grab the ledge
+      armR.rotation.x = -2.4;
+    }
+
+    function updateCamera() {
+      const camOffset = new THREE.Vector3(
+        Math.sin(yaw) * Math.cos(pitch) * cameraDistance,
+        cameraHeight + Math.sin(-pitch) * cameraDistance,
+        Math.cos(yaw) * Math.cos(pitch) * cameraDistance
+      );
+      camera.position.copy(playerPos).add(new THREE.Vector3(0, 1.2, 0)).add(camOffset);
+      camera.lookAt(playerPos.x, playerPos.y + 1.2, playerPos.z);
+    }
+
     function update(dt) {
-      // Desired horizontal direction relative to camera yaw
+      if (playerState === 'hanging') {
+        player.position.copy(playerPos);
+        setHangingPose();
+        updateCamera();
+        return;
+      }
+
+      if (playerState === 'climbing') {
+        climbT = Math.min(CLIMB_DURATION, climbT + dt);
+        const t = climbT / CLIMB_DURATION;
+        const lift = Math.min(1, t / 0.6);
+        const push = Math.max(0, (t - 0.6) / 0.4);
+        const eLift = 1 - Math.pow(1 - lift, 2);
+        playerPos.y = climbStart.y + (climbTop.y - climbStart.y) * eLift;
+        playerPos.x = climbStart.x + (climbTarget.x - climbStart.x) * push;
+        playerPos.z = climbStart.z + (climbTarget.z - climbStart.z) * push;
+        if (climbT >= CLIMB_DURATION) {
+          playerState = 'normal';
+          velocity.set(0, 0, 0);
+        }
+        player.position.copy(playerPos);
+        setHangingPose();
+        updateCamera();
+        return;
+      }
+
+      // ---- normal state ----
       const forward = new THREE.Vector3(-Math.sin(yaw), 0, -Math.cos(yaw));
       const right = new THREE.Vector3(Math.cos(yaw), 0, -Math.sin(yaw));
       const wish = new THREE.Vector3();
@@ -310,36 +469,40 @@
         velocity.z -= velocity.z * Math.min(1, GROUND_FRICTION * dt);
       }
 
-      // Gravity
       velocity.y += GRAVITY * dt;
 
-      // Move + collide per axis
       onGround = false;
       moveAxis('x', velocity.x * dt);
       moveAxis('z', velocity.z * dt);
       moveAxis('y', velocity.y * dt);
 
-      // Fall reset
       if (playerPos.y < -20) {
         playerPos.copy(startPos);
         velocity.set(0, 0, 0);
       }
 
-      // Apply to mesh
+      // Try ledge grab when airborne and roughly drifting toward a wall
+      if (!onGround && !isFlipping) {
+        tryLedgeGrab();
+        if (playerState === 'hanging') {
+          player.position.copy(playerPos);
+          setHangingPose();
+          updateCamera();
+          return;
+        }
+      }
+
       player.position.copy(playerPos);
 
-      // Face movement direction
       const horizSpeed = Math.hypot(velocity.x, velocity.z);
       if (horizSpeed > 0.5) {
         const facing = Math.atan2(velocity.x, velocity.z);
-        // lerp rotation
         let dy = facing - player.rotation.y;
         while (dy > Math.PI) dy -= Math.PI * 2;
         while (dy < -Math.PI) dy += Math.PI * 2;
         player.rotation.y += dy * Math.min(1, 12 * dt);
       }
 
-      // Flip animation
       if (isFlipping) {
         flipAngle += FLIP_SPEED * dt;
         if (flipAngle >= Math.PI * 2 || onGround) {
@@ -347,8 +510,7 @@
           flipAngle = 0;
           bodyGroup.rotation.x = 0;
         } else {
-          // Forward flip: rotate negative around local X (player faces +Z in local space)
-          bodyGroup.rotation.x = -flipAngle;
+          bodyGroup.rotation.x = flipAngle;
         }
         legL.rotation.x = 0;
         legR.rotation.x = 0;
@@ -356,7 +518,6 @@
         armR.rotation.x = 0;
       } else {
         bodyGroup.rotation.x = 0;
-        // Walk animation
         if (onGround && horizSpeed > 0.2) {
           walkPhase += dt * horizSpeed * 1.6;
         } else {
@@ -369,14 +530,7 @@
         armR.rotation.x = swing * 0.8;
       }
 
-      // Camera follows behind player
-      const camOffset = new THREE.Vector3(
-        Math.sin(yaw) * Math.cos(pitch) * cameraDistance,
-        cameraHeight + Math.sin(-pitch) * cameraDistance,
-        Math.cos(yaw) * Math.cos(pitch) * cameraDistance
-      );
-      camera.position.copy(playerPos).add(new THREE.Vector3(0, 1.2, 0)).add(camOffset);
-      camera.lookAt(playerPos.x, playerPos.y + 1.2, playerPos.z);
+      updateCamera();
     }
 
     // ---------- Loop ----------
