@@ -81,7 +81,7 @@
 
     // Sky gradient via large inverted sphere
     {
-      const skyGeo = new THREE.SphereGeometry(400, 32, 16);
+      const skyGeo = new THREE.SphereGeometry(700, 32, 16);
       const skyMat = new THREE.ShaderMaterial({
         side: THREE.BackSide,
         uniforms: {
@@ -93,7 +93,7 @@
       });
       scene.add(new THREE.Mesh(skyGeo, skyMat));
     }
-    scene.fog = new THREE.Fog(0xc6dcef, 90, 320);
+    scene.fog = new THREE.Fog(0xc6dcef, 160, 520);
 
     // ---------- World ----------
     // Static colliders are AABBs: { min: Vector3, max: Vector3 }
@@ -313,13 +313,13 @@
     // Ground
     {
       const groundMat = new THREE.MeshStandardMaterial({ map: makeGrassTexture(), roughness: 1 });
-      const ground = new THREE.Mesh(new THREE.BoxGeometry(300, 1, 300), groundMat);
+      const ground = new THREE.Mesh(new THREE.BoxGeometry(520, 1, 520), groundMat);
       ground.position.y = -0.5;
       ground.receiveShadow = true;
       scene.add(ground);
       colliders.push({
-        min: new THREE.Vector3(-150, -1, -150),
-        max: new THREE.Vector3(150, 0, 150),
+        min: new THREE.Vector3(-260, -1, -260),
+        max: new THREE.Vector3(260, 0, 260),
       });
     }
 
@@ -361,17 +361,23 @@
     }
 
     // Distant mountains
+    for (let i = 0; i < 22; i++) {
+      const a = (i / 22) * Math.PI * 2 + Math.random() * 0.1;
+      const dist = 360 + Math.random() * 80;
+      addMountain(Math.cos(a) * dist, Math.sin(a) * dist, 50 + Math.random() * 70, 30 + Math.random() * 30);
+    }
+    // A second further ring of softer mountains
     for (let i = 0; i < 14; i++) {
-      const a = (i / 14) * Math.PI * 2;
-      const dist = 220 + Math.random() * 40;
-      addMountain(Math.cos(a) * dist, Math.sin(a) * dist, 30 + Math.random() * 40, 24 + Math.random() * 20);
+      const a = (i / 14) * Math.PI * 2 + 0.2;
+      const dist = 480 + Math.random() * 60;
+      addMountain(Math.cos(a) * dist, Math.sin(a) * dist, 80 + Math.random() * 60, 50 + Math.random() * 30);
     }
 
     // Tree clusters in the park area (west / south)
     const treeSpots = [];
-    for (let i = 0; i < 60; i++) {
+    for (let i = 0; i < 160; i++) {
       const angle = Math.random() * Math.PI * 2;
-      const r = 25 + Math.random() * 90;
+      const r = 25 + Math.random() * 200;
       const x = Math.cos(angle) * r;
       const z = Math.sin(angle) * r;
       // Avoid the city zone and the central parkour area
@@ -545,6 +551,126 @@
       scene.add(pole);
     }
 
+    // ---------- Far world parkour zones ----------
+
+    // Long elevated skyway (north): chain of platforms with gaps
+    for (let i = 0; i < 18; i++) {
+      const x = -20 + i * 8;
+      const y = 8 + Math.sin(i * 0.7) * 1.5;
+      const z = -150 - Math.sin(i * 0.4) * 10;
+      addBox(x, y, z, 4, 0.6, 4, accentMat);
+    }
+    // Pillars holding the skyway
+    for (let i = 0; i < 18; i += 2) {
+      addBox(-20 + i * 8, 4, -150, 1.4, 8, 1.4, stoneMat);
+    }
+
+    // Mega tower (far south-east): towering staircase spiral
+    {
+      const cx = 170, cz = 170;
+      for (let i = 0; i < 28; i++) {
+        const a = i * 0.45;
+        const r = 7;
+        addBox(cx + Math.cos(a) * r, 1 + i * 1.4, cz + Math.sin(a) * r, 3.2, 0.5, 3.2, stoneMat);
+      }
+      addBox(cx, 41, cz, 8, 1, 8, woodMat);
+    }
+
+    // Floating archipelago (north-west): scattered small platforms in a cloud
+    for (let i = 0; i < 35; i++) {
+      const x = -180 + Math.random() * 80;
+      const z = -180 + Math.random() * 80;
+      const y = 4 + Math.random() * 18;
+      const s = 1.6 + Math.random() * 1.5;
+      addBox(x, y, z, s, 0.4, s, accentMat);
+    }
+
+    // Canyon walls (south-west): two long opposing walls forming a corridor
+    for (let i = 0; i < 12; i++) {
+      const z = -200 + i * 6;
+      const h = 6 + (i % 3) * 1.5;
+      addBox(-160, h / 2, z, 4, h, 4, stoneMat);
+      addBox(-145, h / 2, z, 4, h - 1.5, 4, stoneMat);
+    }
+    // Bridges spanning the canyon
+    for (let i = 0; i < 4; i++) {
+      addBox(-152.5, 7, -190 + i * 18, 18, 0.5, 1.6, woodMat);
+    }
+
+    // Long jump test - widening gaps
+    for (let i = 0; i < 7; i++) {
+      addBox(60 + i * (4 + i * 0.6), 1, 100 + i * 4, 3, 2, 3, stoneMat);
+    }
+
+    // Half-pipe approximation (curved blocks) far west
+    for (let i = -8; i <= 8; i++) {
+      const x = -200 + Math.abs(i) * 0.5;
+      const y = 0.5 + Math.abs(i) * 0.4;
+      addBox(x, y, 80 + i * 1.6, 1.6, 1, 1.6, accentMat);
+    }
+
+    // Pillar maze (south): grid of short pillars
+    for (let i = 0; i < 8; i++) {
+      for (let j = 0; j < 8; j++) {
+        if ((i + j) % 2 === 0) continue;
+        const h = 1.5 + ((i * 13 + j * 7) % 5) * 0.5;
+        addBox(-90 + i * 4, h / 2, -120 + j * 4, 2.4, h, 2.4, stoneMat);
+      }
+    }
+
+    // Cliff drop with cushioning platforms (east, behind city)
+    addBox(150, 12, 0, 14, 24, 14, stoneMat);
+    addBox(150, 24.6, 0, 16, 0.6, 16, woodMat);
+    for (let i = 0; i < 6; i++) {
+      addBox(140 + i * 5, 6 - i * 0.7, 20 + i * 3, 4, 0.5, 4, accentMat);
+    }
+
+    // Massive billboard tower (visual + climbable)
+    addBox(-220, 8, 60, 4, 16, 4, stoneMat);
+    addBox(-216, 14, 60, 12, 6, 0.5, woodMat);
+
+    // Tree-house platforms - perched on giant tree trunks
+    for (let i = 0; i < 6; i++) {
+      const x = 60 + Math.cos(i * 1.05) * 40;
+      const z = -180 + Math.sin(i * 1.05) * 40;
+      const trunk = new THREE.Mesh(
+        new THREE.CylinderGeometry(1.2, 1.6, 12, 10),
+        new THREE.MeshStandardMaterial({ color: 0x6b4226, roughness: 1 })
+      );
+      trunk.position.set(x, 6, z);
+      trunk.castShadow = true;
+      scene.add(trunk);
+      colliders.push({
+        min: new THREE.Vector3(x - 1.4, 0, z - 1.4),
+        max: new THREE.Vector3(x + 1.4, 12, z + 1.4),
+      });
+      addBox(x, 12.3, z, 5, 0.6, 5, woodMat);
+      // Foliage
+      const foliage = new THREE.Mesh(
+        new THREE.IcosahedronGeometry(3, 0),
+        new THREE.MeshStandardMaterial({ color: 0x2d5a1f, flatShading: true, roughness: 0.9 })
+      );
+      foliage.position.set(x, 16, z);
+      foliage.castShadow = true;
+      scene.add(foliage);
+    }
+    // Rope-bridges (boxes) between tree houses
+    addBox(75, 12.3, -180, 14, 0.4, 1.4, woodMat);
+    addBox(45, 12.3, -160, 1.4, 0.4, 14, woodMat);
+
+    // Vertical "wall ladder" for ledge-grab chain practice (east)
+    for (let i = 0; i < 7; i++) {
+      addBox(190, 1 + i * 2.6, -30 - i * 0.2, 6, 1.2, 1.2, stoneMat);
+    }
+
+    // Big rooftop arena north of city
+    addBox(80, 6, -120, 24, 12, 24, stoneMat);
+    addBox(80, 12.3, -120, 26, 0.6, 26, woodMat);
+    // Obstacles on top
+    addBox(74, 13, -125, 2, 1.4, 2, accentMat);
+    addBox(85, 13, -116, 3, 1.4, 3, accentMat);
+    addBox(80, 13, -120, 1.5, 1.4, 1.5, accentMat);
+
     // ---------- Graffiti decals on walls ----------
     // Wall at (0, 1.5, -20, 14, 3, 1) front face (+Z side, z=-19.5)
     addGraffiti(0, 1.6, -19.49, 9, 2.4, 0);
@@ -644,13 +770,41 @@
     // Legs - baggy black jeans + Reebok Classics shoes (black + white midsole + side stripe)
     function makeLeg(side) {
       const sign = side === 'L' ? -1 : 1;
-      const g = makeLimb(sign * 0.18, 0.86, [
-        { geo: new THREE.BoxGeometry(0.36, 0.72, 0.42), mat: jeansMat, y: -0.36 },
-        { geo: new THREE.BoxGeometry(0.36, 0.12, 0.55), mat: shoeMat,  y: -0.78, z: 0.07 },
-        { geo: new THREE.BoxGeometry(0.38, 0.06, 0.57), mat: soleMat,  y: -0.83, z: 0.07 },
-        { geo: new THREE.BoxGeometry(0.005, 0.05, 0.4), mat: soleMat, x: sign * 0.18, y: -0.78, z: 0.07 },
-      ]);
-      return g;
+      // Hip group (rotates from hip pivot)
+      const hip = new THREE.Group();
+      hip.position.set(sign * 0.18, 0.86 - FLIP_PIVOT_Y, 0);
+      bodyGroup.add(hip);
+
+      const thigh = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.4, 0.42), jeansMat);
+      thigh.position.y = -0.2;
+      thigh.castShadow = true;
+      hip.add(thigh);
+
+      // Knee group (child of hip, rotates from knee pivot)
+      const knee = new THREE.Group();
+      knee.position.y = -0.4;
+      hip.add(knee);
+
+      const shin = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.34, 0.4), jeansMat);
+      shin.position.y = -0.17;
+      shin.castShadow = true;
+      knee.add(shin);
+
+      const shoe = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.12, 0.55), shoeMat);
+      shoe.position.set(0, -0.4, 0.07);
+      shoe.castShadow = true;
+      knee.add(shoe);
+      const sole = new THREE.Mesh(new THREE.BoxGeometry(0.38, 0.06, 0.57), soleMat);
+      sole.position.set(0, -0.46, 0.07);
+      sole.castShadow = true;
+      knee.add(sole);
+      const stripe = new THREE.Mesh(new THREE.BoxGeometry(0.005, 0.05, 0.4), soleMat);
+      stripe.position.set(sign * 0.18, -0.4, 0.07);
+      stripe.castShadow = true;
+      knee.add(stripe);
+
+      hip.knee = knee;
+      return hip;
     }
     const legL = makeLeg('L');
     const legR = makeLeg('R');
@@ -897,6 +1051,8 @@
       bodyGroup.rotation.x = 0;
       legL.rotation.x = 0.15;
       legR.rotation.x = -0.15;
+      legL.knee.rotation.x = 0;
+      legR.knee.rotation.x = 0;
       armL.rotation.x = -2.4; // arms reach up to grab the ledge
       armR.rotation.x = -2.4;
     }
@@ -1000,14 +1156,22 @@
           isFlipping = false;
           flipAngle = 0;
           bodyGroup.rotation.x = 0;
+          legL.knee.rotation.x = 0;
+          legR.knee.rotation.x = 0;
         } else {
           bodyGroup.rotation.x = flipAngle;
         }
-        legL.rotation.x = 0;
-        legR.rotation.x = 0;
-        armL.rotation.x = 0;
-        armR.rotation.x = 0;
+        // Tuck pose: knees pulled to chest, shins folded back, arms hugging
+        const t = Math.min(1, flipAngle / 0.6) * Math.min(1, (Math.PI * 2 - flipAngle) / 0.6);
+        const tuck = Math.max(0.15, t); // peak around mid-flip, never zero during spin
+        legL.rotation.x = 1.55 * tuck;
+        legR.rotation.x = 1.55 * tuck;
+        legL.knee.rotation.x = 1.9 * tuck;
+        legR.knee.rotation.x = 1.9 * tuck;
+        armL.rotation.x = 1.4 * tuck;
+        armR.rotation.x = 1.4 * tuck;
       } else {
+        if (legL.knee) { legL.knee.rotation.x = 0; legR.knee.rotation.x = 0; }
         bodyGroup.rotation.x = 0;
         if (onGround && horizSpeed > 0.2) {
           walkPhase += dt * horizSpeed * 1.6;
