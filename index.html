@@ -172,7 +172,72 @@
       return tex;
     }
 
-    // ---------- Helpers ----------
+    function makeGraffitiTexture() {
+      const c = document.createElement('canvas');
+      c.width = 1024; c.height = 512;
+      const ctx = c.getContext('2d');
+
+      // Dark base
+      ctx.fillStyle = '#1c1024';
+      ctx.fillRect(0, 0, c.width, c.height);
+
+      // Big paint splatter blobs
+      const palette = ['#ff5722', '#ff9800', '#ffeb3b', '#8bc34a', '#00e5ff', '#3f51b5', '#9c27b0', '#e91e63', '#ff1744'];
+      for (let i = 0; i < 90; i++) {
+        const col = palette[Math.floor(Math.random() * palette.length)];
+        const x = Math.random() * c.width;
+        const y = Math.random() * c.height;
+        const r = 18 + Math.random() * 90;
+        ctx.globalAlpha = 0.55 + Math.random() * 0.35;
+        ctx.fillStyle = col;
+        ctx.beginPath();
+        ctx.arc(x, y, r, 0, Math.PI * 2);
+        ctx.fill();
+        // Drips
+        for (let d = 0; d < 3; d++) {
+          ctx.fillRect(x + (Math.random() - 0.5) * r, y, 3 + Math.random() * 5, 25 + Math.random() * 70);
+        }
+      }
+      ctx.globalAlpha = 1;
+      // Spray dots
+      for (let i = 0; i < 1800; i++) {
+        ctx.fillStyle = palette[Math.floor(Math.random() * palette.length)];
+        ctx.fillRect(Math.random() * c.width, Math.random() * c.height, 1 + Math.random() * 2, 1 + Math.random() * 2);
+      }
+
+      // "SCHLAPPEN JR." text with rainbow gradient + purple stroke
+      ctx.font = 'italic bold 200px Impact, "Arial Black", sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      const grad = ctx.createLinearGradient(0, 0, c.width, 0);
+      grad.addColorStop(0.00, '#fff200');
+      grad.addColorStop(0.20, '#ff7a00');
+      grad.addColorStop(0.40, '#ff1493');
+      grad.addColorStop(0.60, '#9c27b0');
+      grad.addColorStop(0.80, '#00bcd4');
+      grad.addColorStop(1.00, '#76ff03');
+      ctx.lineWidth = 18;
+      ctx.lineJoin = 'round';
+      ctx.strokeStyle = '#5b2bff';
+      ctx.shadowColor = 'rgba(0,0,0,0.6)';
+      ctx.shadowBlur = 24;
+      ctx.shadowOffsetX = 6;
+      ctx.shadowOffsetY = 8;
+      ctx.strokeText('SCHLAPPEN JR.', c.width / 2, c.height / 2 + 6);
+      ctx.shadowBlur = 0;
+      ctx.shadowOffsetX = 0;
+      ctx.shadowOffsetY = 0;
+      ctx.fillStyle = grad;
+      ctx.fillText('SCHLAPPEN JR.', c.width / 2, c.height / 2);
+      // Inner highlight
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = 'rgba(255,255,255,0.5)';
+      ctx.strokeText('SCHLAPPEN JR.', c.width / 2, c.height / 2);
+
+      const tex = new THREE.CanvasTexture(c);
+      tex.anisotropy = 8;
+      return tex;
+    }
     function addTree(x, z, scale = 1) {
       const trunk = new THREE.Mesh(
         new THREE.CylinderGeometry(0.18 * scale, 0.28 * scale, 1.6 * scale, 8),
@@ -207,6 +272,17 @@
         min: new THREE.Vector3(x - w / 2, 0, z - d / 2),
         max: new THREE.Vector3(x + w / 2, h, z + d / 2),
       });
+    }
+
+    function addGraffiti(x, y, z, w, h, rotY = 0) {
+      const tex = makeGraffitiTexture();
+      const mat = new THREE.MeshStandardMaterial({ map: tex, roughness: 0.95 });
+      const mesh = new THREE.Mesh(new THREE.PlaneGeometry(w, h), mat);
+      mesh.position.set(x, y, z);
+      mesh.rotation.y = rotY;
+      mesh.receiveShadow = true;
+      scene.add(mesh);
+      return mesh;
     }
 
     function addLamp(x, z) {
@@ -468,6 +544,24 @@
       pole.position.set(110, 23.5, -90);
       scene.add(pole);
     }
+
+    // ---------- Graffiti decals on walls ----------
+    // Wall at (0, 1.5, -20, 14, 3, 1) front face (+Z side, z=-19.5)
+    addGraffiti(0, 1.6, -19.49, 9, 2.4, 0);
+    // Tall wall at (-22, 2, -2, 1, 4, 12) facing +X side (x=-21.5)
+    addGraffiti(-21.49, 2.2, 2, 8, 3, Math.PI / 2);
+    // Same wall, other side facing -X
+    addGraffiti(-22.51, 2.2, -6, 8, 3, -Math.PI / 2);
+    // Crate-stack-adjacent city building west face: building at (55,-,12, 28, 10) -> west x=48
+    addGraffiti(47.99, 4.5, 12, 10, 5, -Math.PI / 2);
+    // City building south-west building (55,-,-20, 18, 10) -> west x=49
+    addGraffiti(48.99, 4.2, -20, 8, 4.5, -Math.PI / 2);
+    // Long parkour rooftop block (-30, 2.5, 22, 8, 5, 8) front (+Z)
+    addGraffiti(-30, 3, 26.01, 5, 3, 0);
+    // Vertical climbing tower base block at (-75, ..., -10) front (+X)
+    addGraffiti(-72.99, 1.5, -10, 4, 2.4, Math.PI / 2);
+    // Spiral tower top reward (top platform underside not great); use the tall block at (110, 10, -90) facing -Z
+    addGraffiti(110, 11, -93.01, 5, 5, Math.PI);
 
     // ---------- Player ----------
     const player = new THREE.Group();
