@@ -26,8 +26,8 @@
   <div id="info">
     <b>Schlappen Jr. Parkour - Physics Test</b><br>
     WASD = Laufen &nbsp; Shift = Sprinten<br>
-    Space = Springen &nbsp; Maus = Kamera<br>
-    R = Reset Position
+    Space = Springen &nbsp; Doppel-Space = Frontflip<br>
+    Maus = Kamera &nbsp; R = Reset Position
   </div>
   <div id="crosshair"></div>
   <div id="lock">Klicken zum Starten (Maus wird gefangen)</div>
@@ -122,40 +122,46 @@
 
     // ---------- Player ----------
     const player = new THREE.Group();
+    // bodyGroup carries all visual body parts; rotates around its local X axis for flips.
+    const FLIP_PIVOT_Y = 0.9;
+    const bodyGroup = new THREE.Group();
+    bodyGroup.position.y = FLIP_PIVOT_Y;
+    player.add(bodyGroup);
+
     const bodyMat = new THREE.MeshStandardMaterial({ color: 0xff3030 });
     const headMat = new THREE.MeshStandardMaterial({ color: 0xffd1a4 });
     const pantsMat = new THREE.MeshStandardMaterial({ color: 0x2244aa });
 
     const torso = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.7, 0.4), bodyMat);
-    torso.position.y = 0.95;
+    torso.position.y = 0.95 - FLIP_PIVOT_Y;
     torso.castShadow = true;
-    player.add(torso);
+    bodyGroup.add(torso);
 
     const head = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.5, 0.5), headMat);
-    head.position.y = 1.55;
+    head.position.y = 1.55 - FLIP_PIVOT_Y;
     head.castShadow = true;
-    player.add(head);
+    bodyGroup.add(head);
 
     const hat = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.18, 0.55), bodyMat);
-    hat.position.y = 1.85;
+    hat.position.y = 1.85 - FLIP_PIVOT_Y;
     hat.castShadow = true;
-    player.add(hat);
+    bodyGroup.add(hat);
 
     const legL = new THREE.Mesh(new THREE.BoxGeometry(0.25, 0.6, 0.3), pantsMat);
-    legL.position.set(-0.16, 0.3, 0);
+    legL.position.set(-0.16, 0.3 - FLIP_PIVOT_Y, 0);
     legL.castShadow = true;
-    player.add(legL);
+    bodyGroup.add(legL);
     const legR = legL.clone();
     legR.position.x = 0.16;
-    player.add(legR);
+    bodyGroup.add(legR);
 
     const armL = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.6, 0.25), bodyMat);
-    armL.position.set(-0.4, 0.95, 0);
+    armL.position.set(-0.4, 0.95 - FLIP_PIVOT_Y, 0);
     armL.castShadow = true;
-    player.add(armL);
+    bodyGroup.add(armL);
     const armR = armL.clone();
     armR.position.x = 0.4;
-    player.add(armR);
+    bodyGroup.add(armR);
 
     scene.add(player);
 
@@ -188,11 +194,47 @@
 
     // ---------- Input ----------
     const keys = {};
+    let lastSpaceTap = -10;
+    let isFlipping = false;
+    let flipAngle = 0;
+    const DOUBLE_TAP_WINDOW = 0.32;
+
+    function tryJumpOrFlip() {
+      const now = performance.now() / 1000;
+      const doubleTap = (now - lastSpaceTap) < DOUBLE_TAP_WINDOW;
+      lastSpaceTap = now;
+
+      if (doubleTap && !isFlipping) {
+        // Frontflip: higher + further than a normal jump
+        velocity.y = JUMP_VEL * 1.35;
+        const facing = player.rotation.y;
+        const fx = Math.sin(facing);
+        const fz = Math.cos(facing);
+        const FLIP_FORWARD_BOOST = 9;
+        // Set forward velocity to at least the boost in facing direction
+        const currentForward = velocity.x * fx + velocity.z * fz;
+        const add = Math.max(0, FLIP_FORWARD_BOOST - currentForward);
+        velocity.x += fx * add;
+        velocity.z += fz * add;
+        isFlipping = true;
+        flipAngle = 0;
+        onGround = false;
+      } else if (onGround) {
+        velocity.y = JUMP_VEL;
+        onGround = false;
+      }
+    }
+
     window.addEventListener('keydown', (e) => {
+      if (e.repeat) return;
       keys[e.code] = true;
+      if (e.code === 'Space') tryJumpOrFlip();
       if (e.code === 'KeyR') {
         playerPos.copy(startPos);
         velocity.set(0, 0, 0);
+        isFlipping = false;
+        flipAngle = 0;
+        bodyGroup.rotation.x = 0;
       }
     });
     window.addEventListener('keyup', (e) => { keys[e.code] = false; });
@@ -204,6 +246,7 @@
     const SPRINT_MULT = 1.6;
     const AIR_CONTROL = 0.4;
     const GROUND_FRICTION = 12;
+    const FLIP_SPEED = Math.PI * 3.2;
 
     function playerAABB(pos) {
       return {
@@ -267,12 +310,6 @@
         velocity.z -= velocity.z * Math.min(1, GROUND_FRICTION * dt);
       }
 
-      // Jump
-      if (keys['Space'] && onGround) {
-        velocity.y = JUMP_VEL;
-        onGround = false;
-      }
-
       // Gravity
       velocity.y += GRAVITY * dt;
 
@@ -302,17 +339,35 @@
         player.rotation.y += dy * Math.min(1, 12 * dt);
       }
 
-      // Walk animation
-      if (onGround && horizSpeed > 0.2) {
-        walkPhase += dt * horizSpeed * 1.6;
+      // Flip animation
+      if (isFlipping) {
+        flipAngle += FLIP_SPEED * dt;
+        if (flipAngle >= Math.PI * 2 || onGround) {
+          isFlipping = false;
+          flipAngle = 0;
+          bodyGroup.rotation.x = 0;
+        } else {
+          // Forward flip: rotate negative around local X (player faces +Z in local space)
+          bodyGroup.rotation.x = -flipAngle;
+        }
+        legL.rotation.x = 0;
+        legR.rotation.x = 0;
+        armL.rotation.x = 0;
+        armR.rotation.x = 0;
       } else {
-        walkPhase *= 0.9;
+        bodyGroup.rotation.x = 0;
+        // Walk animation
+        if (onGround && horizSpeed > 0.2) {
+          walkPhase += dt * horizSpeed * 1.6;
+        } else {
+          walkPhase *= 0.9;
+        }
+        const swing = Math.sin(walkPhase) * 0.6;
+        legL.rotation.x = swing;
+        legR.rotation.x = -swing;
+        armL.rotation.x = -swing * 0.8;
+        armR.rotation.x = swing * 0.8;
       }
-      const swing = Math.sin(walkPhase) * 0.6;
-      legL.rotation.x = swing;
-      legR.rotation.x = -swing;
-      armL.rotation.x = -swing * 0.8;
-      armR.rotation.x = swing * 0.8;
 
       // Camera follows behind player
       const camOffset = new THREE.Vector3(
