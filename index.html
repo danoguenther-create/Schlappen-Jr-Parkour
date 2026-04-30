@@ -46,8 +46,7 @@
 
     // ---------- Scene / Renderer ----------
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x87CEEB);
-    scene.fog = new THREE.Fog(0x87CEEB, 60, 200);
+    scene.background = new THREE.Color(0xc6dcef);
 
     const renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setPixelRatio(window.devicePixelRatio);
@@ -56,7 +55,7 @@
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     document.body.appendChild(renderer.domElement);
 
-    const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 500);
+    const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 1000);
 
     window.addEventListener('resize', () => {
       camera.aspect = window.innerWidth / window.innerHeight;
@@ -65,61 +64,298 @@
     });
 
     // ---------- Lights ----------
-    scene.add(new THREE.AmbientLight(0xffffff, 0.55));
-    const sun = new THREE.DirectionalLight(0xffffff, 1.0);
-    sun.position.set(30, 50, 20);
+    scene.add(new THREE.HemisphereLight(0xb1d8ff, 0x4a4332, 0.65));
+    scene.add(new THREE.AmbientLight(0xffffff, 0.18));
+    const sun = new THREE.DirectionalLight(0xfff2d9, 1.05);
+    sun.position.set(60, 90, 40);
     sun.castShadow = true;
     sun.shadow.mapSize.set(2048, 2048);
-    sun.shadow.camera.left = -60;
-    sun.shadow.camera.right = 60;
-    sun.shadow.camera.top = 60;
-    sun.shadow.camera.bottom = -60;
+    sun.shadow.camera.left = -90;
+    sun.shadow.camera.right = 90;
+    sun.shadow.camera.top = 90;
+    sun.shadow.camera.bottom = -90;
     sun.shadow.camera.near = 0.5;
-    sun.shadow.camera.far = 150;
+    sun.shadow.camera.far = 250;
+    sun.shadow.bias = -0.0005;
     scene.add(sun);
+
+    // Sky gradient via large inverted sphere
+    {
+      const skyGeo = new THREE.SphereGeometry(400, 32, 16);
+      const skyMat = new THREE.ShaderMaterial({
+        side: THREE.BackSide,
+        uniforms: {
+          top:    { value: new THREE.Color(0x4f8fd0) },
+          bottom: { value: new THREE.Color(0xd9e8f3) },
+        },
+        vertexShader: `varying vec3 vWorld; void main(){ vWorld = (modelMatrix * vec4(position,1.0)).xyz; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
+        fragmentShader: `uniform vec3 top; uniform vec3 bottom; varying vec3 vWorld; void main(){ float h = clamp(vWorld.y / 200.0, 0.0, 1.0); gl_FragColor = vec4(mix(bottom, top, pow(h, 0.5)), 1.0); }`,
+      });
+      scene.add(new THREE.Mesh(skyGeo, skyMat));
+    }
+    scene.fog = new THREE.Fog(0xc6dcef, 90, 320);
 
     // ---------- World ----------
     // Static colliders are AABBs: { min: Vector3, max: Vector3 }
     const colliders = [];
 
-    function addBox(x, y, z, w, h, d, color) {
+    function addBox(x, y, z, w, h, d, materialOrColor, opts = {}) {
       const geo = new THREE.BoxGeometry(w, h, d);
-      const mat = new THREE.MeshStandardMaterial({ color });
+      const mat = (materialOrColor && materialOrColor.isMaterial)
+        ? materialOrColor
+        : new THREE.MeshStandardMaterial({ color: materialOrColor, roughness: 0.85 });
       const mesh = new THREE.Mesh(geo, mat);
       mesh.position.set(x, y, z);
+      mesh.castShadow = opts.castShadow !== false;
+      mesh.receiveShadow = true;
+      scene.add(mesh);
+      if (opts.collide !== false) {
+        colliders.push({
+          min: new THREE.Vector3(x - w / 2, y - h / 2, z - d / 2),
+          max: new THREE.Vector3(x + w / 2, y + h / 2, z + d / 2),
+        });
+      }
+      return mesh;
+    }
+
+    // ---------- Procedural textures ----------
+    function makeGrassTexture() {
+      const c = document.createElement('canvas'); c.width = 256; c.height = 256;
+      const ctx = c.getContext('2d');
+      ctx.fillStyle = '#3d7a2a'; ctx.fillRect(0, 0, 256, 256);
+      for (let i = 0; i < 6000; i++) {
+        const x = Math.random() * 256, y = Math.random() * 256;
+        const g = 80 + Math.random() * 80;
+        const r = 30 + Math.random() * 60;
+        ctx.fillStyle = `rgba(${r},${g},${30 + Math.random() * 40},0.55)`;
+        ctx.fillRect(x, y, 1, 1 + Math.random() * 2);
+      }
+      const tex = new THREE.CanvasTexture(c);
+      tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+      tex.repeat.set(50, 50);
+      tex.anisotropy = 8;
+      return tex;
+    }
+
+    function makeRoadTexture() {
+      const c = document.createElement('canvas'); c.width = 64; c.height = 256;
+      const ctx = c.getContext('2d');
+      ctx.fillStyle = '#2b2b2e'; ctx.fillRect(0, 0, 64, 256);
+      for (let i = 0; i < 400; i++) {
+        ctx.fillStyle = `rgba(${60 + Math.random() * 40},${60 + Math.random() * 40},${60 + Math.random() * 40},0.4)`;
+        ctx.fillRect(Math.random() * 64, Math.random() * 256, 1, 1);
+      }
+      ctx.fillStyle = '#e8d666';
+      for (let y = 0; y < 256; y += 32) ctx.fillRect(30, y, 4, 18);
+      const tex = new THREE.CanvasTexture(c);
+      tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+      return tex;
+    }
+
+    function makeBuildingTexture(cols, rows, baseColor = '#b8b0a0') {
+      const cell = 16;
+      const c = document.createElement('canvas');
+      c.width = cols * cell; c.height = rows * cell;
+      const ctx = c.getContext('2d');
+      ctx.fillStyle = baseColor; ctx.fillRect(0, 0, c.width, c.height);
+      for (let r = 0; r < rows; r++) {
+        for (let col = 0; col < cols; col++) {
+          const lit = Math.random() < 0.35;
+          ctx.fillStyle = lit ? '#ffd870' : '#2a3142';
+          ctx.fillRect(col * cell + 3, r * cell + 3, cell - 6, cell - 6);
+        }
+      }
+      ctx.strokeStyle = 'rgba(0,0,0,0.15)';
+      for (let r = 0; r <= rows; r++) { ctx.beginPath(); ctx.moveTo(0, r * cell); ctx.lineTo(c.width, r * cell); ctx.stroke(); }
+      const tex = new THREE.CanvasTexture(c);
+      tex.anisotropy = 8;
+      return tex;
+    }
+
+    // ---------- Helpers ----------
+    function addTree(x, z, scale = 1) {
+      const trunk = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.18 * scale, 0.28 * scale, 1.6 * scale, 8),
+        new THREE.MeshStandardMaterial({ color: 0x6b4226, roughness: 1 })
+      );
+      trunk.position.set(x, 0.8 * scale, z);
+      trunk.castShadow = true;
+      trunk.receiveShadow = true;
+      scene.add(trunk);
+      const foliage = new THREE.Mesh(
+        new THREE.IcosahedronGeometry(1.1 * scale, 0),
+        new THREE.MeshStandardMaterial({ color: 0x2d5a1f + Math.floor(Math.random() * 0x002000), flatShading: true, roughness: 0.9 })
+      );
+      foliage.position.set(x, 2.2 * scale, z);
+      foliage.castShadow = true;
+      scene.add(foliage);
+    }
+
+    function addBuilding(x, z, w, h, d, palette = '#b8b0a0') {
+      const cols = Math.max(2, Math.round(w * 1.2));
+      const rows = Math.max(3, Math.round(h * 1.2));
+      const tex = makeBuildingTexture(cols, rows, palette);
+      const sideMat = new THREE.MeshStandardMaterial({ map: tex, roughness: 0.8 });
+      const roofMat = new THREE.MeshStandardMaterial({ color: 0x444444, roughness: 0.95 });
+      const mats = [sideMat, sideMat, roofMat, roofMat, sideMat, sideMat];
+      const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mats);
+      mesh.position.set(x, h / 2, z);
       mesh.castShadow = true;
       mesh.receiveShadow = true;
       scene.add(mesh);
       colliders.push({
-        min: new THREE.Vector3(x - w / 2, y - h / 2, z - d / 2),
-        max: new THREE.Vector3(x + w / 2, y + h / 2, z + d / 2),
+        min: new THREE.Vector3(x - w / 2, 0, z - d / 2),
+        max: new THREE.Vector3(x + w / 2, h, z + d / 2),
       });
-      return mesh;
+    }
+
+    function addLamp(x, z) {
+      const post = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.08, 0.1, 4, 8),
+        new THREE.MeshStandardMaterial({ color: 0x222222, roughness: 0.6, metalness: 0.4 })
+      );
+      post.position.set(x, 2, z);
+      post.castShadow = true;
+      scene.add(post);
+      const head = new THREE.Mesh(
+        new THREE.SphereGeometry(0.22, 12, 8),
+        new THREE.MeshStandardMaterial({ color: 0xfff2c0, emissive: 0xffe080, emissiveIntensity: 0.8 })
+      );
+      head.position.set(x, 4.1, z);
+      scene.add(head);
+    }
+
+    function addMountain(x, z, h, r) {
+      const m = new THREE.Mesh(
+        new THREE.ConeGeometry(r, h, 5),
+        new THREE.MeshStandardMaterial({ color: 0x6b7a8c, flatShading: true, roughness: 1 })
+      );
+      m.position.set(x, h / 2, z);
+      scene.add(m);
     }
 
     // Ground
-    addBox(0, -0.5, 0, 80, 1, 80, 0x4a8f3a);
+    {
+      const groundMat = new THREE.MeshStandardMaterial({ map: makeGrassTexture(), roughness: 1 });
+      const ground = new THREE.Mesh(new THREE.BoxGeometry(300, 1, 300), groundMat);
+      ground.position.y = -0.5;
+      ground.receiveShadow = true;
+      scene.add(ground);
+      colliders.push({
+        min: new THREE.Vector3(-150, -1, -150),
+        max: new THREE.Vector3(150, 0, 150),
+      });
+    }
 
-    // Parkour platforms - small course
-    addBox(6, 1, 0, 4, 2, 4, 0xc97a3a);
-    addBox(12, 2, 2, 3, 4, 3, 0xc97a3a);
-    addBox(18, 3.5, -1, 3, 7, 3, 0xc97a3a);
-    addBox(24, 5, 2, 3, 10, 3, 0xc97a3a);
+    // Roads (visual only)
+    {
+      const roadMat = new THREE.MeshStandardMaterial({ map: makeRoadTexture(), roughness: 0.95 });
+      roadMat.map.repeat.set(1, 30);
+      const roadMain = new THREE.Mesh(new THREE.PlaneGeometry(8, 240), roadMat);
+      roadMain.rotation.x = -Math.PI / 2;
+      roadMain.position.set(40, 0.01, 0);
+      roadMain.receiveShadow = true;
+      scene.add(roadMain);
+
+      const roadMat2 = roadMat.clone();
+      roadMat2.map = makeRoadTexture(); roadMat2.map.repeat.set(1, 30); roadMat2.map.rotation = Math.PI / 2;
+      const roadCross = new THREE.Mesh(new THREE.PlaneGeometry(8, 240), roadMat);
+      roadCross.rotation.x = -Math.PI / 2;
+      roadCross.rotation.z = Math.PI / 2;
+      roadCross.position.set(0, 0.01, -40);
+      roadCross.receiveShadow = true;
+      scene.add(roadCross);
+    }
+
+    // City block (east of spawn)
+    const cityPalettes = ['#b8b0a0', '#a89882', '#9aa8b8', '#c0a888', '#8a8a96'];
+    const cityLots = [
+      [55, -20, 12, 18, 10], [55, 5, 12, 28, 10],  [55, 30, 12, 14, 10],
+      [75, -20, 14, 22, 12], [75, 8, 14, 35, 12],  [75, 35, 14, 18, 12],
+      [95, -15, 14, 16, 14], [95, 15, 14, 26, 14],
+    ];
+    cityLots.forEach((b, i) => {
+      addBuilding(b[0], b[1], b[2], b[3], b[4], cityPalettes[i % cityPalettes.length]);
+    });
+
+    // Lamp posts along the road
+    for (let z = -100; z <= 100; z += 20) {
+      addLamp(34, z);
+      addLamp(46, z);
+    }
+
+    // Distant mountains
+    for (let i = 0; i < 14; i++) {
+      const a = (i / 14) * Math.PI * 2;
+      const dist = 220 + Math.random() * 40;
+      addMountain(Math.cos(a) * dist, Math.sin(a) * dist, 30 + Math.random() * 40, 24 + Math.random() * 20);
+    }
+
+    // Tree clusters in the park area (west / south)
+    const treeSpots = [];
+    for (let i = 0; i < 60; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const r = 25 + Math.random() * 90;
+      const x = Math.cos(angle) * r;
+      const z = Math.sin(angle) * r;
+      // Avoid the city zone and the central parkour area
+      if (x > 40 && x < 110 && z > -45 && z < 45) continue;
+      if (Math.abs(x) < 18 && Math.abs(z) < 18) continue;
+      // Avoid roads
+      if (Math.abs(x - 40) < 6) continue;
+      if (Math.abs(z + 40) < 6) continue;
+      treeSpots.push([x, z, 0.8 + Math.random() * 0.8]);
+    }
+    treeSpots.forEach(([x, z, s]) => addTree(x, z, s));
+
+    // Park benches / rocks (visual)
+    for (let i = 0; i < 12; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const r = 30 + Math.random() * 50;
+      const x = Math.cos(angle) * r, z = Math.sin(angle) * r;
+      if (x > 30 && z > -50 && z < 50) continue;
+      const rock = new THREE.Mesh(
+        new THREE.IcosahedronGeometry(0.4 + Math.random() * 0.6, 0),
+        new THREE.MeshStandardMaterial({ color: 0x8a8a8a, flatShading: true, roughness: 1 })
+      );
+      rock.position.set(x, 0.2, z);
+      rock.castShadow = true;
+      rock.receiveShadow = true;
+      scene.add(rock);
+    }
+
+    // ---------- Parkour course (central) ----------
+    const stoneMat = new THREE.MeshStandardMaterial({ color: 0xb0a890, roughness: 0.95 });
+    const woodMat = new THREE.MeshStandardMaterial({ color: 0xa06a3a, roughness: 0.9 });
+    const platMat = new THREE.MeshStandardMaterial({ color: 0xc97a3a, roughness: 0.9 });
+    const accentMat = new THREE.MeshStandardMaterial({ color: 0xb04d4d, roughness: 0.9 });
+
+    // Stepping stones
+    addBox(6, 1, 0, 4, 2, 4, stoneMat);
+    addBox(12, 2, 2, 3, 4, 3, stoneMat);
+    addBox(18, 3.5, -1, 3, 7, 3, stoneMat);
+    addBox(24, 5, 2, 3, 10, 3, stoneMat);
 
     // Stair steps
     for (let i = 0; i < 6; i++) {
-      addBox(-6 - i * 1.2, 0.4 + i * 0.8, 6, 1.2, 0.8 + i * 1.6, 3, 0x9c6b3a);
+      addBox(-6 - i * 1.2, 0.4 + i * 0.8, 6, 1.2, 0.8 + i * 1.6, 3, woodMat);
     }
 
     // Floating challenge platforms
-    addBox(-4, 4, -8, 3, 0.5, 3, 0xb04d4d);
-    addBox(-9, 5, -12, 3, 0.5, 3, 0xb04d4d);
-    addBox(-14, 6, -8, 3, 0.5, 3, 0xb04d4d);
-    addBox(-9, 7.5, -4, 3, 0.5, 3, 0xb04d4d);
+    addBox(-4, 4, -8, 3, 0.5, 3, accentMat);
+    addBox(-9, 5, -12, 3, 0.5, 3, accentMat);
+    addBox(-14, 6, -8, 3, 0.5, 3, accentMat);
+    addBox(-9, 7.5, -4, 3, 0.5, 3, accentMat);
 
-    // Walls
-    addBox(0, 1.5, -20, 12, 3, 1, 0xaaaaaa);
-    addBox(15, 1.5, 15, 1, 3, 8, 0xaaaaaa);
+    // Test walls for ledge grab (different heights)
+    addBox(0, 1.5, -20, 14, 3, 1, stoneMat);
+    addBox(15, 1.5, 15, 1, 3, 8, stoneMat);
+    addBox(-22, 2, -2, 1, 4, 12, stoneMat); // tall wall to grab
+
+    // Long parkour run with rooftops
+    addBox(-30, 2.5, 22, 8, 5, 8, woodMat);
+    addBox(-40, 4, 30, 8, 8, 8, woodMat);
+    addBox(-50, 5.5, 22, 8, 11, 8, woodMat);
 
     // ---------- Player ----------
     const player = new THREE.Group();
