@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <title>Schlappen Jr. Parkour</title>
+  <style>
+    html, body { margin: 0; padding: 0; overflow: hidden; background: #87CEEB; font-family: sans-serif; }
+    #info {
+      position: absolute; top: 10px; left: 10px; color: #fff;
+      background: rgba(0,0,0,0.5); padding: 8px 12px; border-radius: 6px;
+      font-size: 13px; line-height: 1.4; user-select: none; pointer-events: none;
+    }
+    #crosshair {
+      position: absolute; top: 50%; left: 50%; width: 4px; height: 4px;
+      margin: -2px 0 0 -2px; background: rgba(255,255,255,0.7); border-radius: 50%;
+      pointer-events: none;
+    }
+    #lock {
+      position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+      color: #fff; background: rgba(0,0,0,0.6); font-size: 18px; cursor: pointer;
+    }
+    #lock.hidden { display: none; }
+  </style>
+</head>
+<body>
+  <div id="info">
+    <b>Schlappen Jr. Parkour - Physics Test</b><br>
+    WASD = Laufen &nbsp; Shift = Sprinten<br>
+    Space = Springen &nbsp; Maus = Kamera<br>
+    R = Reset Position
+  </div>
+  <div id="crosshair"></div>
+  <div id="lock">Klicken zum Starten (Maus wird gefangen)</div>
+
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.160.0/build/three.module.js"
+    }
+  }
+  </script>
+
+  <script type="module">
+    import * as THREE from 'three';
+
+    // ---------- Scene / Renderer ----------
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x87CEEB);
+    scene.fog = new THREE.Fog(0x87CEEB, 60, 200);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setPixelRatio(window.devicePixelRatio);
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    document.body.appendChild(renderer.domElement);
+
+    const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 500);
+
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+
+    // ---------- Lights ----------
+    scene.add(new THREE.AmbientLight(0xffffff, 0.55));
+    const sun = new THREE.DirectionalLight(0xffffff, 1.0);
+    sun.position.set(30, 50, 20);
+    sun.castShadow = true;
+    sun.shadow.mapSize.set(2048, 2048);
+    sun.shadow.camera.left = -60;
+    sun.shadow.camera.right = 60;
+    sun.shadow.camera.top = 60;
+    sun.shadow.camera.bottom = -60;
+    sun.shadow.camera.near = 0.5;
+    sun.shadow.camera.far = 150;
+    scene.add(sun);
+
+    // ---------- World ----------
+    // Static colliders are AABBs: { min: Vector3, max: Vector3 }
+    const colliders = [];
+
+    function addBox(x, y, z, w, h, d, color) {
+      const geo = new THREE.BoxGeometry(w, h, d);
+      const mat = new THREE.MeshStandardMaterial({ color });
+      const mesh = new THREE.Mesh(geo, mat);
+      mesh.position.set(x, y, z);
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+      scene.add(mesh);
+      colliders.push({
+        min: new THREE.Vector3(x - w / 2, y - h / 2, z - d / 2),
+        max: new THREE.Vector3(x + w / 2, y + h / 2, z + d / 2),
+      });
+      return mesh;
+    }
+
+    // Ground
+    addBox(0, -0.5, 0, 80, 1, 80, 0x4a8f3a);
+
+    // Parkour platforms - small course
+    addBox(6, 1, 0, 4, 2, 4, 0xc97a3a);
+    addBox(12, 2, 2, 3, 4, 3, 0xc97a3a);
+    addBox(18, 3.5, -1, 3, 7, 3, 0xc97a3a);
+    addBox(24, 5, 2, 3, 10, 3, 0xc97a3a);
+
+    // Stair steps
+    for (let i = 0; i < 6; i++) {
+      addBox(-6 - i * 1.2, 0.4 + i * 0.8, 6, 1.2, 0.8 + i * 1.6, 3, 0x9c6b3a);
+    }
+
+    // Floating challenge platforms
+    addBox(-4, 4, -8, 3, 0.5, 3, 0xb04d4d);
+    addBox(-9, 5, -12, 3, 0.5, 3, 0xb04d4d);
+    addBox(-14, 6, -8, 3, 0.5, 3, 0xb04d4d);
+    addBox(-9, 7.5, -4, 3, 0.5, 3, 0xb04d4d);
+
+    // Walls
+    addBox(0, 1.5, -20, 12, 3, 1, 0xaaaaaa);
+    addBox(15, 1.5, 15, 1, 3, 8, 0xaaaaaa);
+
+    // ---------- Player ----------
+    const player = new THREE.Group();
+    const bodyMat = new THREE.MeshStandardMaterial({ color: 0xff3030 });
+    const headMat = new THREE.MeshStandardMaterial({ color: 0xffd1a4 });
+    const pantsMat = new THREE.MeshStandardMaterial({ color: 0x2244aa });
+
+    const torso = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.7, 0.4), bodyMat);
+    torso.position.y = 0.95;
+    torso.castShadow = true;
+    player.add(torso);
+
+    const head = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.5, 0.5), headMat);
+    head.position.y = 1.55;
+    head.castShadow = true;
+    player.add(head);
+
+    const hat = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.18, 0.55), bodyMat);
+    hat.position.y = 1.85;
+    hat.castShadow = true;
+    player.add(hat);
+
+    const legL = new THREE.Mesh(new THREE.BoxGeometry(0.25, 0.6, 0.3), pantsMat);
+    legL.position.set(-0.16, 0.3, 0);
+    legL.castShadow = true;
+    player.add(legL);
+    const legR = legL.clone();
+    legR.position.x = 0.16;
+    player.add(legR);
+
+    const armL = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.6, 0.25), bodyMat);
+    armL.position.set(-0.4, 0.95, 0);
+    armL.castShadow = true;
+    player.add(armL);
+    const armR = armL.clone();
+    armR.position.x = 0.4;
+    player.add(armR);
+
+    scene.add(player);
+
+    // Player physics state
+    const PLAYER_HEIGHT = 1.8;
+    const PLAYER_RADIUS = 0.35; // half-width of AABB used for collision
+    const startPos = new THREE.Vector3(0, 2, 0);
+    const playerPos = startPos.clone();
+    const velocity = new THREE.Vector3();
+    let onGround = false;
+
+    // ---------- Camera controls (third person, mouse look) ----------
+    let yaw = 0;     // around Y
+    let pitch = -0.2; // around X
+    const cameraDistance = 6;
+    const cameraHeight = 2;
+
+    const lockEl = document.getElementById('lock');
+    lockEl.addEventListener('click', () => renderer.domElement.requestPointerLock());
+    document.addEventListener('pointerlockchange', () => {
+      if (document.pointerLockElement === renderer.domElement) lockEl.classList.add('hidden');
+      else lockEl.classList.remove('hidden');
+    });
+    document.addEventListener('mousemove', (e) => {
+      if (document.pointerLockElement !== renderer.domElement) return;
+      yaw -= e.movementX * 0.0025;
+      pitch -= e.movementY * 0.0025;
+      pitch = Math.max(-1.2, Math.min(0.6, pitch));
+    });
+
+    // ---------- Input ----------
+    const keys = {};
+    window.addEventListener('keydown', (e) => {
+      keys[e.code] = true;
+      if (e.code === 'KeyR') {
+        playerPos.copy(startPos);
+        velocity.set(0, 0, 0);
+      }
+    });
+    window.addEventListener('keyup', (e) => { keys[e.code] = false; });
+
+    // ---------- Physics ----------
+    const GRAVITY = -28;
+    const JUMP_VEL = 9.5;
+    const MOVE_SPEED = 6;
+    const SPRINT_MULT = 1.6;
+    const AIR_CONTROL = 0.4;
+    const GROUND_FRICTION = 12;
+
+    function playerAABB(pos) {
+      return {
+        min: new THREE.Vector3(pos.x - PLAYER_RADIUS, pos.y, pos.z - PLAYER_RADIUS),
+        max: new THREE.Vector3(pos.x + PLAYER_RADIUS, pos.y + PLAYER_HEIGHT, pos.z + PLAYER_RADIUS),
+      };
+    }
+
+    function aabbOverlap(a, b) {
+      return a.min.x < b.max.x && a.max.x > b.min.x &&
+             a.min.y < b.max.y && a.max.y > b.min.y &&
+             a.min.z < b.max.z && a.max.z > b.min.z;
+    }
+
+    // Move along one axis at a time and resolve collisions
+    function moveAxis(axis, delta) {
+      playerPos[axis] += delta;
+      const me = playerAABB(playerPos);
+      for (const c of colliders) {
+        if (!aabbOverlap(me, c)) continue;
+        if (delta > 0) {
+          const push = me.max[axis] - c.min[axis];
+          playerPos[axis] -= push;
+        } else if (delta < 0) {
+          const push = c.max[axis] - me.min[axis];
+          playerPos[axis] += push;
+        }
+        if (axis === 'y') {
+          if (delta < 0) onGround = true;
+          velocity.y = 0;
+        }
+        // refresh AABB
+        me.min[axis] = playerPos[axis] - (axis === 'y' ? 0 : PLAYER_RADIUS);
+        me.max[axis] = playerPos[axis] + (axis === 'y' ? PLAYER_HEIGHT : PLAYER_RADIUS);
+      }
+    }
+
+    // Animation helpers
+    let walkPhase = 0;
+
+    function update(dt) {
+      // Desired horizontal direction relative to camera yaw
+      const forward = new THREE.Vector3(-Math.sin(yaw), 0, -Math.cos(yaw));
+      const right = new THREE.Vector3(Math.cos(yaw), 0, -Math.sin(yaw));
+      const wish = new THREE.Vector3();
+      if (keys['KeyW']) wish.add(forward);
+      if (keys['KeyS']) wish.sub(forward);
+      if (keys['KeyD']) wish.add(right);
+      if (keys['KeyA']) wish.sub(right);
+
+      const sprint = keys['ShiftLeft'] || keys['ShiftRight'];
+      const targetSpeed = MOVE_SPEED * (sprint ? SPRINT_MULT : 1);
+
+      if (wish.lengthSq() > 0) {
+        wish.normalize().multiplyScalar(targetSpeed);
+        const control = onGround ? 1 : AIR_CONTROL;
+        velocity.x += (wish.x - velocity.x) * Math.min(1, GROUND_FRICTION * control * dt);
+        velocity.z += (wish.z - velocity.z) * Math.min(1, GROUND_FRICTION * control * dt);
+      } else if (onGround) {
+        velocity.x -= velocity.x * Math.min(1, GROUND_FRICTION * dt);
+        velocity.z -= velocity.z * Math.min(1, GROUND_FRICTION * dt);
+      }
+
+      // Jump
+      if (keys['Space'] && onGround) {
+        velocity.y = JUMP_VEL;
+        onGround = false;
+      }
+
+      // Gravity
+      velocity.y += GRAVITY * dt;
+
+      // Move + collide per axis
+      onGround = false;
+      moveAxis('x', velocity.x * dt);
+      moveAxis('z', velocity.z * dt);
+      moveAxis('y', velocity.y * dt);
+
+      // Fall reset
+      if (playerPos.y < -20) {
+        playerPos.copy(startPos);
+        velocity.set(0, 0, 0);
+      }
+
+      // Apply to mesh
+      player.position.copy(playerPos);
+
+      // Face movement direction
+      const horizSpeed = Math.hypot(velocity.x, velocity.z);
+      if (horizSpeed > 0.5) {
+        const facing = Math.atan2(velocity.x, velocity.z);
+        // lerp rotation
+        let dy = facing - player.rotation.y;
+        while (dy > Math.PI) dy -= Math.PI * 2;
+        while (dy < -Math.PI) dy += Math.PI * 2;
+        player.rotation.y += dy * Math.min(1, 12 * dt);
+      }
+
+      // Walk animation
+      if (onGround && horizSpeed > 0.2) {
+        walkPhase += dt * horizSpeed * 1.6;
+      } else {
+        walkPhase *= 0.9;
+      }
+      const swing = Math.sin(walkPhase) * 0.6;
+      legL.rotation.x = swing;
+      legR.rotation.x = -swing;
+      armL.rotation.x = -swing * 0.8;
+      armR.rotation.x = swing * 0.8;
+
+      // Camera follows behind player
+      const camOffset = new THREE.Vector3(
+        Math.sin(yaw) * Math.cos(pitch) * cameraDistance,
+        cameraHeight + Math.sin(-pitch) * cameraDistance,
+        Math.cos(yaw) * Math.cos(pitch) * cameraDistance
+      );
+      camera.position.copy(playerPos).add(new THREE.Vector3(0, 1.2, 0)).add(camOffset);
+      camera.lookAt(playerPos.x, playerPos.y + 1.2, playerPos.z);
+    }
+
+    // ---------- Loop ----------
+    let prev = performance.now();
+    function animate(now) {
+      const dt = Math.min(0.05, (now - prev) / 1000);
+      prev = now;
+      update(dt);
+      renderer.render(scene, camera);
+      requestAnimationFrame(animate);
+    }
+    requestAnimationFrame(animate);
+  </script>
+</body>
+</html>
