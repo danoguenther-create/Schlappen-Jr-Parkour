@@ -571,40 +571,89 @@
     bodyGroup.position.y = FLIP_PIVOT_Y;
     player.add(bodyGroup);
 
-    const bodyMat = new THREE.MeshStandardMaterial({ color: 0xff3030 });
-    const headMat = new THREE.MeshStandardMaterial({ color: 0xffd1a4 });
-    const pantsMat = new THREE.MeshStandardMaterial({ color: 0x2244aa });
+    const skinMat   = new THREE.MeshStandardMaterial({ color: 0xe6b88a, roughness: 0.85 });
+    const hairMat   = new THREE.MeshStandardMaterial({ color: 0x6e4d20, roughness: 0.9 });
+    const fadeMat   = new THREE.MeshStandardMaterial({ color: 0x4a3214, roughness: 0.9 });
+    const shirtMat  = new THREE.MeshStandardMaterial({ color: 0x1f6fc8, roughness: 0.85 });
+    const jeansMat  = new THREE.MeshStandardMaterial({ color: 0x121319, roughness: 0.85 });
+    const shoeMat   = new THREE.MeshStandardMaterial({ color: 0x0d0d10, roughness: 0.55 });
+    const soleMat   = new THREE.MeshStandardMaterial({ color: 0xf2f2f2, roughness: 0.9 });
+    const frameMat  = new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.4, metalness: 0.6 });
+    const lensMat   = new THREE.MeshStandardMaterial({ color: 0x223040, roughness: 0.2, metalness: 0.4, transparent: true, opacity: 0.55 });
 
-    const torso = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.7, 0.4), bodyMat);
-    torso.position.y = 0.95 - FLIP_PIVOT_Y;
-    torso.castShadow = true;
-    bodyGroup.add(torso);
+    function bodyPart(geometry, mat, x, y, z, parent = bodyGroup) {
+      const m = new THREE.Mesh(geometry, mat);
+      m.position.set(x, y - FLIP_PIVOT_Y, z);
+      m.castShadow = true;
+      parent.add(m);
+      return m;
+    }
 
-    const head = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.5, 0.5), headMat);
-    head.position.y = 1.55 - FLIP_PIVOT_Y;
-    head.castShadow = true;
-    bodyGroup.add(head);
+    // Athletic torso: wider chest tapering to narrower waist
+    bodyPart(new THREE.BoxGeometry(0.74, 0.36, 0.4), shirtMat, 0, 1.27, 0);  // chest
+    bodyPart(new THREE.BoxGeometry(0.6, 0.32, 0.38), shirtMat, 0, 0.93, 0);  // waist
 
-    const hat = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.18, 0.55), bodyMat);
-    hat.position.y = 1.85 - FLIP_PIVOT_Y;
-    hat.castShadow = true;
-    bodyGroup.add(hat);
+    // Neck + head
+    bodyPart(new THREE.BoxGeometry(0.22, 0.1, 0.22), skinMat, 0, 1.5, 0);
+    bodyPart(new THREE.BoxGeometry(0.5, 0.5, 0.5), skinMat, 0, 1.79, 0);
 
-    const legL = new THREE.Mesh(new THREE.BoxGeometry(0.25, 0.6, 0.3), pantsMat);
-    legL.position.set(-0.16, 0.3 - FLIP_PIVOT_Y, 0);
-    legL.castShadow = true;
-    bodyGroup.add(legL);
-    const legR = legL.clone();
-    legR.position.x = 0.16;
-    bodyGroup.add(legR);
+    // Hair: mid-fade — darker faded sides, blonde top + fringe
+    bodyPart(new THREE.BoxGeometry(0.04, 0.16, 0.5), fadeMat, -0.255, 1.74, 0);
+    bodyPart(new THREE.BoxGeometry(0.04, 0.16, 0.5), fadeMat,  0.255, 1.74, 0);
+    bodyPart(new THREE.BoxGeometry(0.5, 0.04, 0.04), fadeMat, 0, 1.66, 0.255);
+    bodyPart(new THREE.BoxGeometry(0.56, 0.18, 0.56), hairMat, 0, 2.02, 0); // top hair
+    bodyPart(new THREE.BoxGeometry(0.5, 0.07, 0.06), hairMat, 0, 1.94, 0.255); // fringe
+    bodyPart(new THREE.BoxGeometry(0.06, 0.16, 0.5), hairMat, -0.255, 1.92, 0); // upper sides
+    bodyPart(new THREE.BoxGeometry(0.06, 0.16, 0.5), hairMat,  0.255, 1.92, 0);
 
-    const armL = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.6, 0.25), bodyMat);
-    armL.position.set(-0.4, 0.95 - FLIP_PIVOT_Y, 0);
-    armL.castShadow = true;
-    bodyGroup.add(armL);
-    const armR = armL.clone();
-    armR.position.x = 0.4;
-    bodyGroup.add(armR);
+    // Glasses
+    bodyPart(new THREE.BoxGeometry(0.18, 0.13, 0.025), frameMat, -0.13, 1.78, 0.255);
+    bodyPart(new THREE.BoxGeometry(0.18, 0.13, 0.025), frameMat,  0.13, 1.78, 0.255);
+    bodyPart(new THREE.BoxGeometry(0.13, 0.105, 0.005), lensMat, -0.13, 1.78, 0.27);
+    bodyPart(new THREE.BoxGeometry(0.13, 0.105, 0.005), lensMat,  0.13, 1.78, 0.27);
+    bodyPart(new THREE.BoxGeometry(0.08, 0.025, 0.025), frameMat, 0, 1.78, 0.26);
+    bodyPart(new THREE.BoxGeometry(0.02, 0.025, 0.22), frameMat, -0.225, 1.78, 0.15);
+    bodyPart(new THREE.BoxGeometry(0.02, 0.025, 0.22), frameMat,  0.225, 1.78, 0.15);
+
+    // Limb groups (pivot at shoulder/hip so swing rotation looks natural)
+    function makeLimb(shoulderX, shoulderY, parts) {
+      const g = new THREE.Group();
+      g.position.set(shoulderX, shoulderY - FLIP_PIVOT_Y, 0);
+      bodyGroup.add(g);
+      parts.forEach(p => {
+        const m = new THREE.Mesh(p.geo, p.mat);
+        m.position.set(p.x || 0, p.y, p.z || 0);
+        m.castShadow = true;
+        g.add(m);
+      });
+      return g;
+    }
+
+    // Arms - upper (T-shirt sleeve) + forearm (skin)
+    const armL = makeLimb(-0.46, 1.42, [
+      { geo: new THREE.BoxGeometry(0.2, 0.34, 0.24), mat: shirtMat,  y: -0.17 },
+      { geo: new THREE.BoxGeometry(0.18, 0.36, 0.22), mat: skinMat,  y: -0.52 },
+      { geo: new THREE.BoxGeometry(0.2, 0.14, 0.22),  mat: skinMat,  y: -0.77 }, // hand
+    ]);
+    const armR = makeLimb( 0.46, 1.42, [
+      { geo: new THREE.BoxGeometry(0.2, 0.34, 0.24), mat: shirtMat,  y: -0.17 },
+      { geo: new THREE.BoxGeometry(0.18, 0.36, 0.22), mat: skinMat,  y: -0.52 },
+      { geo: new THREE.BoxGeometry(0.2, 0.14, 0.22),  mat: skinMat,  y: -0.77 },
+    ]);
+
+    // Legs - baggy black jeans + Reebok Classics shoes (black + white midsole + side stripe)
+    function makeLeg(side) {
+      const sign = side === 'L' ? -1 : 1;
+      const g = makeLimb(sign * 0.18, 0.86, [
+        { geo: new THREE.BoxGeometry(0.36, 0.72, 0.42), mat: jeansMat, y: -0.36 },
+        { geo: new THREE.BoxGeometry(0.36, 0.12, 0.55), mat: shoeMat,  y: -0.78, z: 0.07 },
+        { geo: new THREE.BoxGeometry(0.38, 0.06, 0.57), mat: soleMat,  y: -0.83, z: 0.07 },
+        { geo: new THREE.BoxGeometry(0.005, 0.05, 0.4), mat: soleMat, x: sign * 0.18, y: -0.78, z: 0.07 },
+      ]);
+      return g;
+    }
+    const legL = makeLeg('L');
+    const legR = makeLeg('R');
 
     scene.add(player);
 
