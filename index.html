@@ -34,12 +34,12 @@
   <div id="info">
     <b>Schlappen Jr. Parkour - Physics Test</b><br>
     WASD = Laufen &nbsp; Shift = Sprinten &nbsp; Doppel-Shift = Dive Roll<br>
-    Space = Springen &nbsp; Doppel-Space (Luft) = Frontflip<br>
-    Space + S = Backflip &nbsp; Space + A/D = Sideflip<br>
+    Space = Springen &nbsp; In der Luft: Doppel-Space = Frontflip<br>
+    In der Luft: S = Backflip &nbsp; A/D = Sideflip<br>
     An Kante: W = Hochziehen &nbsp; Space/S = Loslassen<br>
     Maus = Kamera &nbsp; R = Reset Position
   </div>
-  <div id="version">build 2026-05-01 #tricks</div>
+  <div id="version">build 2026-05-01 #air-flips</div>
   <div id="crosshair"></div>
   <div id="lock">Klicken zum Starten (Maus wird gefangen)</div>
 
@@ -878,21 +878,22 @@
         velocity.x += fx * add;
         velocity.z += fz * add;
       } else if (type === 'back') {
-        velocity.y = JUMP_VEL * 1.3;
-        // Align player to camera so the flip looks natural; push back
-        player.rotation.y = yaw;
-        velocity.x = -camFwdX * 6;
-        velocity.z = -camFwdZ * 6;
+        velocity.y = JUMP_VEL * 1.2;
+        // Align player to face camera-forward (away from camera) so the
+        // body's local axes match screen-space for the flip
+        player.rotation.y = yaw + Math.PI;
+        velocity.x = -camFwdX * 4;
+        velocity.z = -camFwdZ * 4;
       } else if (type === 'sideL') {
-        velocity.y = JUMP_VEL * 1.2;
-        player.rotation.y = yaw;
-        velocity.x = -camRightX * 7;
-        velocity.z = -camRightZ * 7;
+        velocity.y = JUMP_VEL * 1.15;
+        player.rotation.y = yaw + Math.PI;
+        velocity.x = -camRightX * 6;
+        velocity.z = -camRightZ * 6;
       } else if (type === 'sideR') {
-        velocity.y = JUMP_VEL * 1.2;
-        player.rotation.y = yaw;
-        velocity.x = camRightX * 7;
-        velocity.z = camRightZ * 7;
+        velocity.y = JUMP_VEL * 1.15;
+        player.rotation.y = yaw + Math.PI;
+        velocity.x = camRightX * 6;
+        velocity.z = camRightZ * 6;
       } else if (type === 'roll') {
         velocity.y = 3.5;
         const facing = player.rotation.y;
@@ -912,17 +913,14 @@
       }
 
       if (onGround && !isFlipping) {
-        if (keys['KeyS'] && !keys['KeyA'] && !keys['KeyD']) {
-          startFlip('back');
-        } else if (keys['KeyA'] && !keys['KeyD']) {
-          startFlip('sideL');
-        } else if (keys['KeyD'] && !keys['KeyA']) {
-          startFlip('sideR');
-        } else {
-          velocity.y = JUMP_VEL;
-          onGround = false;
-        }
+        velocity.y = JUMP_VEL;
+        onGround = false;
       }
+    }
+
+    function tryAirFlip(type) {
+      if (onGround || isFlipping || playerState !== 'normal') return;
+      startFlip(type);
     }
 
     function tryDiveRoll() {
@@ -945,6 +943,9 @@
       if (playerState === 'climbing') return;
       if (e.code === 'Space') tryJumpOrFlip();
       if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') tryDiveRoll();
+      if (e.code === 'KeyS') tryAirFlip('back');
+      if (e.code === 'KeyA') tryAirFlip('sideL');
+      if (e.code === 'KeyD') tryAirFlip('sideR');
       if (e.code === 'KeyR') {
         playerPos.copy(startPos);
         velocity.set(0, 0, 0);
@@ -1164,10 +1165,13 @@
       const forward = new THREE.Vector3(-Math.sin(yaw), 0, -Math.cos(yaw));
       const right = new THREE.Vector3(Math.cos(yaw), 0, -Math.sin(yaw));
       const wish = new THREE.Vector3();
-      if (keys['KeyW']) wish.add(forward);
-      if (keys['KeyS']) wish.sub(forward);
-      if (keys['KeyD']) wish.add(right);
-      if (keys['KeyA']) wish.sub(right);
+      // Lock directional input during flips/roll so the trick keeps its boost
+      if (!isFlipping) {
+        if (keys['KeyW']) wish.add(forward);
+        if (keys['KeyS']) wish.sub(forward);
+        if (keys['KeyD']) wish.add(right);
+        if (keys['KeyA']) wish.sub(right);
+      }
 
       const sprint = keys['ShiftLeft'] || keys['ShiftRight'];
       const targetSpeed = MOVE_SPEED * (sprint ? SPRINT_MULT : 1);
@@ -1208,7 +1212,7 @@
       player.position.copy(playerPos);
 
       const horizSpeed = Math.hypot(velocity.x, velocity.z);
-      if (horizSpeed > 0.5) {
+      if (!isFlipping && horizSpeed > 0.5) {
         const facing = Math.atan2(velocity.x, velocity.z);
         let dy = facing - player.rotation.y;
         while (dy > Math.PI) dy -= Math.PI * 2;
