@@ -33,13 +33,13 @@
 <body>
   <div id="info">
     <b>Schlappen Jr. Parkour - Physics Test</b><br>
-    WASD = Laufen &nbsp; Shift = Sprinten &nbsp; Doppel-Shift = Dive Roll<br>
-    Space = Springen<br>
+    WASD = Laufen (S = rückwärts) &nbsp; Shift = Sprinten<br>
+    Space = Springen &nbsp; Doppel-Tap WASD = Dive Roll in die Richtung<br>
     In der Luft: W = Frontflip &nbsp; S = Backflip &nbsp; A/D = Sideflip<br>
     An Kante: W = Hochziehen &nbsp; Space/S = Loslassen<br>
     Maus = Kamera &nbsp; R = Reset Position
   </div>
-  <div id="version">build 2026-05-01 #air-wsad</div>
+  <div id="version">build 2026-05-01 #face-strafe-rolls</div>
   <div id="crosshair"></div>
   <div id="lock">Klicken zum Starten (Maus wird gefangen)</div>
 
@@ -715,7 +715,8 @@
     const shoeMat   = new THREE.MeshStandardMaterial({ color: 0x0d0d10, roughness: 0.55 });
     const soleMat   = new THREE.MeshStandardMaterial({ color: 0xf2f2f2, roughness: 0.9 });
     const frameMat  = new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.4, metalness: 0.6 });
-    const lensMat   = new THREE.MeshStandardMaterial({ color: 0x223040, roughness: 0.2, metalness: 0.4, transparent: true, opacity: 0.55 });
+    const lensMat   = new THREE.MeshStandardMaterial({ color: 0xeef4ff, roughness: 0.05, metalness: 0.2, transparent: true, opacity: 0.22 });
+    const mouthMat  = new THREE.MeshStandardMaterial({ color: 0x5a2a22, roughness: 0.6 });
 
     function bodyPart(geometry, mat, x, y, z, parent = bodyGroup) {
       const m = new THREE.Mesh(geometry, mat);
@@ -736,13 +737,12 @@
     // Hair: mid-fade — darker faded sides, blonde top + fringe
     bodyPart(new THREE.BoxGeometry(0.04, 0.16, 0.5), fadeMat, -0.255, 1.74, 0);
     bodyPart(new THREE.BoxGeometry(0.04, 0.16, 0.5), fadeMat,  0.255, 1.74, 0);
-    bodyPart(new THREE.BoxGeometry(0.5, 0.04, 0.04), fadeMat, 0, 1.66, 0.255);
     bodyPart(new THREE.BoxGeometry(0.56, 0.18, 0.56), hairMat, 0, 2.02, 0); // top hair
     bodyPart(new THREE.BoxGeometry(0.5, 0.07, 0.06), hairMat, 0, 1.94, 0.255); // fringe
     bodyPart(new THREE.BoxGeometry(0.06, 0.16, 0.5), hairMat, -0.255, 1.92, 0); // upper sides
     bodyPart(new THREE.BoxGeometry(0.06, 0.16, 0.5), hairMat,  0.255, 1.92, 0);
 
-    // Glasses
+    // Glasses (clear lenses)
     bodyPart(new THREE.BoxGeometry(0.18, 0.13, 0.025), frameMat, -0.13, 1.78, 0.255);
     bodyPart(new THREE.BoxGeometry(0.18, 0.13, 0.025), frameMat,  0.13, 1.78, 0.255);
     bodyPart(new THREE.BoxGeometry(0.13, 0.105, 0.005), lensMat, -0.13, 1.78, 0.27);
@@ -750,6 +750,12 @@
     bodyPart(new THREE.BoxGeometry(0.08, 0.025, 0.025), frameMat, 0, 1.78, 0.26);
     bodyPart(new THREE.BoxGeometry(0.02, 0.025, 0.22), frameMat, -0.225, 1.78, 0.15);
     bodyPart(new THREE.BoxGeometry(0.02, 0.025, 0.22), frameMat,  0.225, 1.78, 0.15);
+
+    // Nose (small pyramid-ish bump)
+    bodyPart(new THREE.BoxGeometry(0.07, 0.1, 0.05), skinMat, 0, 1.66, 0.275);
+    bodyPart(new THREE.BoxGeometry(0.05, 0.05, 0.05), skinMat, 0, 1.62, 0.275);
+    // Mouth
+    bodyPart(new THREE.BoxGeometry(0.15, 0.025, 0.005), mouthMat, 0, 1.55, 0.255);
 
     // Limb groups (pivot at shoulder/hip so swing rotation looks natural)
     function makeLimb(shoulderX, shoulderY, parts) {
@@ -850,10 +856,11 @@
 
     // ---------- Input ----------
     const keys = {};
-    let lastShiftTap = -10;
+    const lastTap = { KeyW: -10, KeyS: -10, KeyA: -10, KeyD: -10 };
     let isFlipping = false;
     let flipAngle = 0;
     let flipType = null; // 'front' | 'back' | 'sideL' | 'sideR' | 'roll'
+    let rollDir = 'forward'; // 'forward' | 'back' | 'left' | 'right' for roll axis
     const DOUBLE_TAP_WINDOW = 0.32;
 
     function startFlip(type) {
@@ -892,9 +899,14 @@
         velocity.z = camRightZ * 6;
       } else if (type === 'roll') {
         velocity.y = 3.5;
-        const facing = player.rotation.y;
-        velocity.x = Math.sin(facing) * 14;
-        velocity.z = Math.cos(facing) * 14;
+        player.rotation.y = yaw + Math.PI;
+        let dx = 0, dz = 0;
+        if (rollDir === 'forward')      { dx = camFwdX;     dz = camFwdZ; }
+        else if (rollDir === 'back')    { dx = -camFwdX;    dz = -camFwdZ; }
+        else if (rollDir === 'right')   { dx = camRightX;   dz = camRightZ; }
+        else if (rollDir === 'left')    { dx = -camRightX;  dz = -camRightZ; }
+        velocity.x = dx * 14;
+        velocity.z = dz * 14;
       }
     }
 
@@ -910,13 +922,15 @@
       startFlip(type);
     }
 
-    function tryDiveRoll() {
+    function tryDirectionalRoll(code) {
       const now = performance.now() / 1000;
-      const doubleTap = (now - lastShiftTap) < DOUBLE_TAP_WINDOW;
-      lastShiftTap = now;
-      if (doubleTap && onGround && !isFlipping && playerState === 'normal') {
-        startFlip('roll');
-      }
+      const doubleTap = (now - lastTap[code]) < DOUBLE_TAP_WINDOW;
+      lastTap[code] = now;
+      if (!doubleTap) return;
+      if (!onGround || isFlipping || playerState !== 'normal') return;
+      const map = { KeyW: 'forward', KeyS: 'back', KeyA: 'left', KeyD: 'right' };
+      rollDir = map[code];
+      startFlip('roll');
     }
 
     window.addEventListener('keydown', (e) => {
@@ -929,11 +943,10 @@
       }
       if (playerState === 'climbing') return;
       if (e.code === 'Space') tryJump();
-      if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') tryDiveRoll();
-      if (e.code === 'KeyW') tryAirFlip('front');
-      if (e.code === 'KeyS') tryAirFlip('back');
-      if (e.code === 'KeyA') tryAirFlip('sideL');
-      if (e.code === 'KeyD') tryAirFlip('sideR');
+      if (e.code === 'KeyW') { tryAirFlip('front'); tryDirectionalRoll('KeyW'); }
+      if (e.code === 'KeyS') { tryAirFlip('back');  tryDirectionalRoll('KeyS'); }
+      if (e.code === 'KeyA') { tryAirFlip('sideL'); tryDirectionalRoll('KeyA'); }
+      if (e.code === 'KeyD') { tryAirFlip('sideR'); tryDirectionalRoll('KeyD'); }
       if (e.code === 'KeyR') {
         playerPos.copy(startPos);
         velocity.set(0, 0, 0);
@@ -1200,12 +1213,14 @@
       player.position.copy(playerPos);
 
       const horizSpeed = Math.hypot(velocity.x, velocity.z);
-      if (!isFlipping && horizSpeed > 0.5) {
-        const facing = Math.atan2(velocity.x, velocity.z);
-        let dy = facing - player.rotation.y;
+      // Always face away from the camera (third-person controller style).
+      // S strafes backward, A/D strafe sideways without spinning the model.
+      if (!isFlipping) {
+        const targetFacing = yaw + Math.PI;
+        let dy = targetFacing - player.rotation.y;
         while (dy > Math.PI) dy -= Math.PI * 2;
         while (dy < -Math.PI) dy += Math.PI * 2;
-        player.rotation.y += dy * Math.min(1, 12 * dt);
+        player.rotation.y += dy * Math.min(1, 10 * dt);
       }
 
       if (isFlipping) {
@@ -1223,7 +1238,7 @@
           legL.knee.rotation.x = 0;
           legR.knee.rotation.x = 0;
         } else {
-          if (flipType === 'front' || flipType === 'roll') {
+          if (flipType === 'front') {
             bodyGroup.rotation.x = flipAngle;
             bodyGroup.rotation.z = 0;
           } else if (flipType === 'back') {
@@ -1235,6 +1250,11 @@
           } else if (flipType === 'sideR') {
             bodyGroup.rotation.x = 0;
             bodyGroup.rotation.z = flipAngle;
+          } else if (flipType === 'roll') {
+            if (rollDir === 'forward')      { bodyGroup.rotation.x =  flipAngle; bodyGroup.rotation.z = 0; }
+            else if (rollDir === 'back')    { bodyGroup.rotation.x = -flipAngle; bodyGroup.rotation.z = 0; }
+            else if (rollDir === 'left')    { bodyGroup.rotation.x = 0; bodyGroup.rotation.z = -flipAngle; }
+            else if (rollDir === 'right')   { bodyGroup.rotation.x = 0; bodyGroup.rotation.z =  flipAngle; }
           }
         }
         // Tuck pose: hips flex forward (knees to belly), knees fold shins back
