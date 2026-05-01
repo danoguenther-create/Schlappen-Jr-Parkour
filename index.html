@@ -38,7 +38,7 @@
     An Kante: W = Hochziehen &nbsp; Space/S = Loslassen<br>
     Maus = Kamera &nbsp; R = Reset Position
   </div>
-  <div id="version">build 2026-04-30 #frontflip-tuck</div>
+  <div id="version">build 2026-05-01 #tuck-forward</div>
   <div id="crosshair"></div>
   <div id="lock">Klicken zum Starten (Maus wird gefangen)</div>
 
@@ -1170,15 +1170,16 @@
         } else {
           bodyGroup.rotation.x = flipAngle;
         }
-        // Tuck pose: knees pulled to chest, shins folded back, arms hugging
+        // Tuck pose: hips flex forward (knees to chest), knees bend so shins fold
+        // back toward the butt, arms reach forward to hug the knees
         const t = Math.min(1, flipAngle / 0.6) * Math.min(1, (Math.PI * 2 - flipAngle) / 0.6);
-        const tuck = Math.max(0.15, t); // peak around mid-flip, never zero during spin
-        legL.rotation.x = 1.55 * tuck;
-        legR.rotation.x = 1.55 * tuck;
-        legL.knee.rotation.x = 1.9 * tuck;
-        legR.knee.rotation.x = 1.9 * tuck;
-        armL.rotation.x = 1.4 * tuck;
-        armR.rotation.x = 1.4 * tuck;
+        const tuck = Math.max(0.15, t);
+        legL.rotation.x = -1.8 * tuck;
+        legR.rotation.x = -1.8 * tuck;
+        legL.knee.rotation.x = 2.0 * tuck;
+        legR.knee.rotation.x = 2.0 * tuck;
+        armL.rotation.x = -1.5 * tuck;
+        armR.rotation.x = -1.5 * tuck;
       } else {
         if (legL.knee) { legL.knee.rotation.x = 0; legR.knee.rotation.x = 0; }
         bodyGroup.rotation.x = 0;
