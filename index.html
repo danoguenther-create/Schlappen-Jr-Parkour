@@ -34,12 +34,12 @@
   <div id="info">
     <b>Schlappen Jr. Parkour - Physics Test</b><br>
     WASD = Laufen &nbsp; Shift = Sprinten &nbsp; Doppel-Shift = Dive Roll<br>
-    Space = Springen &nbsp; In der Luft: Doppel-Space = Frontflip<br>
-    In der Luft: S = Backflip &nbsp; A/D = Sideflip<br>
+    Space = Springen<br>
+    In der Luft: W = Frontflip &nbsp; S = Backflip &nbsp; A/D = Sideflip<br>
     An Kante: W = Hochziehen &nbsp; Space/S = Loslassen<br>
     Maus = Kamera &nbsp; R = Reset Position
   </div>
-  <div id="version">build 2026-05-01 #air-flips</div>
+  <div id="version">build 2026-05-01 #air-wsad</div>
   <div id="crosshair"></div>
   <div id="lock">Klicken zum Starten (Maus wird gefangen)</div>
 
@@ -850,7 +850,6 @@
 
     // ---------- Input ----------
     const keys = {};
-    let lastSpaceTap = -10;
     let lastShiftTap = -10;
     let isFlipping = false;
     let flipAngle = 0;
@@ -869,14 +868,11 @@
       const camRightZ = -Math.sin(yaw);
 
       if (type === 'front') {
-        velocity.y = JUMP_VEL * 1.35;
-        const facing = player.rotation.y;
-        const fx = Math.sin(facing);
-        const fz = Math.cos(facing);
-        const cur = velocity.x * fx + velocity.z * fz;
-        const add = Math.max(0, 9 - cur);
-        velocity.x += fx * add;
-        velocity.z += fz * add;
+        velocity.y = JUMP_VEL * 1.25;
+        // Align to camera-forward so the rotation axis matches screen-space
+        player.rotation.y = yaw + Math.PI;
+        velocity.x = camFwdX * 6;
+        velocity.z = camFwdZ * 6;
       } else if (type === 'back') {
         velocity.y = JUMP_VEL * 1.2;
         // Align player to face camera-forward (away from camera) so the
@@ -902,16 +898,7 @@
       }
     }
 
-    function tryJumpOrFlip() {
-      const now = performance.now() / 1000;
-      const doubleTap = (now - lastSpaceTap) < DOUBLE_TAP_WINDOW;
-      lastSpaceTap = now;
-
-      if (doubleTap && !isFlipping && !onGround) {
-        startFlip('front');
-        return;
-      }
-
+    function tryJump() {
       if (onGround && !isFlipping) {
         velocity.y = JUMP_VEL;
         onGround = false;
@@ -941,8 +928,9 @@
         return;
       }
       if (playerState === 'climbing') return;
-      if (e.code === 'Space') tryJumpOrFlip();
+      if (e.code === 'Space') tryJump();
       if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') tryDiveRoll();
+      if (e.code === 'KeyW') tryAirFlip('front');
       if (e.code === 'KeyS') tryAirFlip('back');
       if (e.code === 'KeyA') tryAirFlip('sideL');
       if (e.code === 'KeyD') tryAirFlip('sideR');
@@ -1243,10 +1231,10 @@
             bodyGroup.rotation.z = 0;
           } else if (flipType === 'sideL') {
             bodyGroup.rotation.x = 0;
-            bodyGroup.rotation.z = flipAngle;
+            bodyGroup.rotation.z = -flipAngle;
           } else if (flipType === 'sideR') {
             bodyGroup.rotation.x = 0;
-            bodyGroup.rotation.z = -flipAngle;
+            bodyGroup.rotation.z = flipAngle;
           }
         }
         // Tuck pose: hips flex forward (knees to belly), knees fold shins back
