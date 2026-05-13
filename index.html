@@ -33,7 +33,7 @@
     Doppel-Tap der Richtung am Boden = Dive Roll &nbsp; in der Luft = Double Flip<br>
     An Kante: vor = Hochziehen &nbsp; Springen/zurück = Loslassen &nbsp; R = Reset
   </div>
-  <div id="version">build 2026-05-13 #splitscreen</div>
+  <div id="version">build 2026-05-13 #sideflip-fix</div>
   <div id="splitDivider"></div>
 
   <script type="importmap">
@@ -1170,14 +1170,14 @@
           } else if (p.flipType === 'back') {
             p.bodyGroup.rotation.x = -p.flipAngle; p.bodyGroup.rotation.z = 0;
           } else if (p.flipType === 'sideL') {
-            p.bodyGroup.rotation.x = 0; p.bodyGroup.rotation.z = -p.flipAngle;
-          } else if (p.flipType === 'sideR') {
             p.bodyGroup.rotation.x = 0; p.bodyGroup.rotation.z = p.flipAngle;
+          } else if (p.flipType === 'sideR') {
+            p.bodyGroup.rotation.x = 0; p.bodyGroup.rotation.z = -p.flipAngle;
           } else if (p.flipType === 'roll') {
             if (p.rollDir === 'forward')    { p.bodyGroup.rotation.x =  p.flipAngle; p.bodyGroup.rotation.z = 0; }
             else if (p.rollDir === 'back')  { p.bodyGroup.rotation.x = -p.flipAngle; p.bodyGroup.rotation.z = 0; }
-            else if (p.rollDir === 'left')  { p.bodyGroup.rotation.x = 0; p.bodyGroup.rotation.z = -p.flipAngle; }
-            else if (p.rollDir === 'right') { p.bodyGroup.rotation.x = 0; p.bodyGroup.rotation.z =  p.flipAngle; }
+            else if (p.rollDir === 'left')  { p.bodyGroup.rotation.x = 0; p.bodyGroup.rotation.z =  p.flipAngle; }
+            else if (p.rollDir === 'right') { p.bodyGroup.rotation.x = 0; p.bodyGroup.rotation.z = -p.flipAngle; }
           }
         }
         const t = Math.min(1, p.flipAngle / 0.6) * Math.min(1, (p.flipTargetAngle - p.flipAngle) / 0.6);
