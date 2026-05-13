@@ -18,31 +18,23 @@
       background: rgba(0,0,0,0.45); padding: 4px 8px; border-radius: 4px;
       font-size: 11px; font-family: monospace; pointer-events: none; user-select: none;
     }
-    #crosshair {
-      position: absolute; top: 50%; left: 50%; width: 4px; height: 4px;
-      margin: -2px 0 0 -2px; background: rgba(255,255,255,0.7); border-radius: 50%;
-      pointer-events: none;
+    #splitDivider {
+      position: absolute; top: 0; left: 50%; width: 2px; height: 100%;
+      background: rgba(0,0,0,0.6); pointer-events: none;
     }
-    #lock {
-      position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
-      color: #fff; background: rgba(0,0,0,0.6); font-size: 18px; cursor: pointer;
-    }
-    #lock.hidden { display: none; }
   </style>
 </head>
 <body>
   <div id="info">
-    <b>Schlappen Jr. Parkour - Physics Test</b><br>
-    WASD = Laufen (S = rückwärts) &nbsp; Shift = Sprinten<br>
-    Space = Springen &nbsp; Doppel-Tap WASD = Dive Roll in die Richtung<br>
-    In der Luft: W = Frontflip &nbsp; S = Backflip &nbsp; A/D = Sideflip<br>
-    In der Luft Doppel-Tap = Double Flip<br>
-    An Kante: W = Hochziehen &nbsp; Space/S = Loslassen<br>
-    Maus = Kamera &nbsp; R = Reset Position
+    <b>Schlappen Jr. Parkour - Local Split-Screen</b><br>
+    <b>P1 (links):</b> WS = vor/zurück &nbsp; AD = drehen &nbsp; Shift = Sprinten &nbsp; Space = Springen<br>
+    <b>P2 (rechts):</b> ↑↓ = vor/zurück &nbsp; ←→ = drehen &nbsp; M = Sprinten &nbsp; Enter = Springen<br>
+    In der Luft: vor = Frontflip &nbsp; zurück = Backflip &nbsp; links/rechts = Sideflip<br>
+    Doppel-Tap der Richtung am Boden = Dive Roll &nbsp; in der Luft = Double Flip<br>
+    An Kante: vor = Hochziehen &nbsp; Springen/zurück = Loslassen &nbsp; R = Reset
   </div>
-  <div id="version">build 2026-05-01 #ears-doubleflip</div>
-  <div id="crosshair"></div>
-  <div id="lock">Klicken zum Starten (Maus wird gefangen)</div>
+  <div id="version">build 2026-05-13 #splitscreen</div>
+  <div id="splitDivider"></div>
 
   <script type="importmap">
   {
@@ -66,11 +58,9 @@
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     document.body.appendChild(renderer.domElement);
 
-    const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 1000);
+    const camera = null; // replaced by per-player cameras
 
     window.addEventListener('resize', () => {
-      camera.aspect = window.innerWidth / window.innerHeight;
-      camera.updateProjectionMatrix();
       renderer.setSize(window.innerWidth, window.innerHeight);
     });
 
@@ -700,281 +690,20 @@
     // Spiral tower top reward (top platform underside not great); use the tall block at (110, 10, -90) facing -Z
     addGraffiti(110, 11, -93.01, 5, 5, Math.PI);
 
-    // ---------- Player ----------
-    const player = new THREE.Group();
-    // bodyGroup carries all visual body parts; rotates around its local X axis for flips.
+    // ---------- Constants ----------
     const FLIP_PIVOT_Y = 0.9;
-    const bodyGroup = new THREE.Group();
-    bodyGroup.position.y = FLIP_PIVOT_Y;
-    player.add(bodyGroup);
-
-    const skinMat   = new THREE.MeshStandardMaterial({ color: 0xe6b88a, roughness: 0.85 });
-    const hairMat   = new THREE.MeshStandardMaterial({ color: 0x6e4d20, roughness: 0.9 });
-    const fadeMat   = new THREE.MeshStandardMaterial({ color: 0x4a3214, roughness: 0.9 });
-    const shirtMat  = new THREE.MeshStandardMaterial({ color: 0x1f6fc8, roughness: 0.85 });
-    const jeansMat  = new THREE.MeshStandardMaterial({ color: 0x121319, roughness: 0.85 });
-    const shoeMat   = new THREE.MeshStandardMaterial({ color: 0x0d0d10, roughness: 0.55 });
-    const soleMat   = new THREE.MeshStandardMaterial({ color: 0xf2f2f2, roughness: 0.9 });
-    const frameMat  = new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.4, metalness: 0.6 });
-    const lensMat   = new THREE.MeshStandardMaterial({ color: 0xeef4ff, roughness: 0.05, metalness: 0.2, transparent: true, opacity: 0.22 });
-    const mouthMat  = new THREE.MeshStandardMaterial({ color: 0x5a2a22, roughness: 0.6 });
-
-    function bodyPart(geometry, mat, x, y, z, parent = bodyGroup) {
-      const m = new THREE.Mesh(geometry, mat);
-      m.position.set(x, y - FLIP_PIVOT_Y, z);
-      m.castShadow = true;
-      parent.add(m);
-      return m;
-    }
-
-    // Athletic torso: wider chest tapering to narrower waist
-    bodyPart(new THREE.BoxGeometry(0.74, 0.36, 0.4), shirtMat, 0, 1.27, 0);  // chest
-    bodyPart(new THREE.BoxGeometry(0.6, 0.32, 0.38), shirtMat, 0, 0.93, 0);  // waist
-
-    // Neck + head
-    bodyPart(new THREE.BoxGeometry(0.22, 0.1, 0.22), skinMat, 0, 1.5, 0);
-    bodyPart(new THREE.BoxGeometry(0.5, 0.5, 0.5), skinMat, 0, 1.79, 0);
-
-    // Hair: dark blonde top + fringe + upper sides (lower sides are skin = mid-fade look)
-    bodyPart(new THREE.BoxGeometry(0.56, 0.18, 0.56), hairMat, 0, 2.02, 0); // top hair
-    bodyPart(new THREE.BoxGeometry(0.5, 0.07, 0.06), hairMat, 0, 1.94, 0.255); // fringe
-    bodyPart(new THREE.BoxGeometry(0.06, 0.16, 0.5), hairMat, -0.255, 1.92, 0); // upper sides
-    bodyPart(new THREE.BoxGeometry(0.06, 0.16, 0.5), hairMat,  0.255, 1.92, 0);
-
-    // Ears
-    bodyPart(new THREE.BoxGeometry(0.06, 0.18, 0.14), skinMat, -0.28, 1.76, -0.02);
-    bodyPart(new THREE.BoxGeometry(0.06, 0.18, 0.14), skinMat,  0.28, 1.76, -0.02);
-
-    // Glasses (clear lenses)
-    bodyPart(new THREE.BoxGeometry(0.18, 0.13, 0.025), frameMat, -0.13, 1.78, 0.255);
-    bodyPart(new THREE.BoxGeometry(0.18, 0.13, 0.025), frameMat,  0.13, 1.78, 0.255);
-    bodyPart(new THREE.BoxGeometry(0.13, 0.105, 0.005), lensMat, -0.13, 1.78, 0.27);
-    bodyPart(new THREE.BoxGeometry(0.13, 0.105, 0.005), lensMat,  0.13, 1.78, 0.27);
-    bodyPart(new THREE.BoxGeometry(0.08, 0.025, 0.025), frameMat, 0, 1.78, 0.26);
-    bodyPart(new THREE.BoxGeometry(0.02, 0.025, 0.22), frameMat, -0.225, 1.78, 0.15);
-    bodyPart(new THREE.BoxGeometry(0.02, 0.025, 0.22), frameMat,  0.225, 1.78, 0.15);
-
-    // Nose (small pyramid-ish bump)
-    bodyPart(new THREE.BoxGeometry(0.07, 0.1, 0.05), skinMat, 0, 1.66, 0.275);
-    bodyPart(new THREE.BoxGeometry(0.05, 0.05, 0.05), skinMat, 0, 1.62, 0.275);
-    // Mouth
-    bodyPart(new THREE.BoxGeometry(0.15, 0.025, 0.005), mouthMat, 0, 1.55, 0.255);
-
-    // Limb groups (pivot at shoulder/hip so swing rotation looks natural)
-    function makeLimb(shoulderX, shoulderY, parts) {
-      const g = new THREE.Group();
-      g.position.set(shoulderX, shoulderY - FLIP_PIVOT_Y, 0);
-      bodyGroup.add(g);
-      parts.forEach(p => {
-        const m = new THREE.Mesh(p.geo, p.mat);
-        m.position.set(p.x || 0, p.y, p.z || 0);
-        m.castShadow = true;
-        g.add(m);
-      });
-      return g;
-    }
-
-    // Arms - upper (T-shirt sleeve) + forearm (skin)
-    const armL = makeLimb(-0.46, 1.42, [
-      { geo: new THREE.BoxGeometry(0.2, 0.34, 0.24), mat: shirtMat,  y: -0.17 },
-      { geo: new THREE.BoxGeometry(0.18, 0.36, 0.22), mat: skinMat,  y: -0.52 },
-      { geo: new THREE.BoxGeometry(0.2, 0.14, 0.22),  mat: skinMat,  y: -0.77 }, // hand
-    ]);
-    const armR = makeLimb( 0.46, 1.42, [
-      { geo: new THREE.BoxGeometry(0.2, 0.34, 0.24), mat: shirtMat,  y: -0.17 },
-      { geo: new THREE.BoxGeometry(0.18, 0.36, 0.22), mat: skinMat,  y: -0.52 },
-      { geo: new THREE.BoxGeometry(0.2, 0.14, 0.22),  mat: skinMat,  y: -0.77 },
-    ]);
-
-    // Legs - baggy black jeans + Reebok Classics shoes (black + white midsole + side stripe)
-    function makeLeg(side) {
-      const sign = side === 'L' ? -1 : 1;
-      // Hip group (rotates from hip pivot)
-      const hip = new THREE.Group();
-      hip.position.set(sign * 0.18, 0.86 - FLIP_PIVOT_Y, 0);
-      bodyGroup.add(hip);
-
-      const thigh = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.4, 0.42), jeansMat);
-      thigh.position.y = -0.2;
-      thigh.castShadow = true;
-      hip.add(thigh);
-
-      // Knee group (child of hip, rotates from knee pivot)
-      const knee = new THREE.Group();
-      knee.position.y = -0.4;
-      hip.add(knee);
-
-      const shin = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.34, 0.4), jeansMat);
-      shin.position.y = -0.17;
-      shin.castShadow = true;
-      knee.add(shin);
-
-      const shoe = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.12, 0.55), shoeMat);
-      shoe.position.set(0, -0.4, 0.07);
-      shoe.castShadow = true;
-      knee.add(shoe);
-      const sole = new THREE.Mesh(new THREE.BoxGeometry(0.38, 0.06, 0.57), soleMat);
-      sole.position.set(0, -0.46, 0.07);
-      sole.castShadow = true;
-      knee.add(sole);
-      const stripe = new THREE.Mesh(new THREE.BoxGeometry(0.005, 0.05, 0.4), soleMat);
-      stripe.position.set(sign * 0.18, -0.4, 0.07);
-      stripe.castShadow = true;
-      knee.add(stripe);
-
-      hip.knee = knee;
-      return hip;
-    }
-    const legL = makeLeg('L');
-    const legR = makeLeg('R');
-
-    scene.add(player);
-
-    // Player physics state
     const PLAYER_HEIGHT = 1.8;
-    const PLAYER_RADIUS = 0.35; // half-width of AABB used for collision
-    const startPos = new THREE.Vector3(0, 2, 0);
-    const playerPos = startPos.clone();
-    const velocity = new THREE.Vector3();
-    let onGround = false;
-
-    // ---------- Camera controls (third person, mouse look) ----------
-    let yaw = 0;     // around Y
-    let pitch = -0.2; // around X
+    const PLAYER_RADIUS = 0.35;
+    const HAND_HEIGHT = 1.5;
+    const GRAB_VERTICAL_TOL = 0.35;
+    const GRAB_PROBE = PLAYER_RADIUS + 0.25;
+    const CLIMB_DURATION = 0.55;
+    const DOUBLE_TAP_WINDOW = 0.32;
+    const PITCH = -0.22;
     const cameraDistance = 6;
     const cameraHeight = 2;
+    const TURN_SPEED = 2.8;
 
-    const lockEl = document.getElementById('lock');
-    lockEl.addEventListener('click', () => renderer.domElement.requestPointerLock());
-    document.addEventListener('pointerlockchange', () => {
-      if (document.pointerLockElement === renderer.domElement) lockEl.classList.add('hidden');
-      else lockEl.classList.remove('hidden');
-    });
-    document.addEventListener('mousemove', (e) => {
-      if (document.pointerLockElement !== renderer.domElement) return;
-      yaw -= e.movementX * 0.0025;
-      pitch -= e.movementY * 0.0025;
-      pitch = Math.max(-1.2, Math.min(0.6, pitch));
-    });
-
-    // ---------- Input ----------
-    const keys = {};
-    const lastTap = { KeyW: -10, KeyS: -10, KeyA: -10, KeyD: -10 };
-    let isFlipping = false;
-    let flipAngle = 0;
-    let flipTargetAngle = Math.PI * 2;
-    let flipType = null; // 'front' | 'back' | 'sideL' | 'sideR' | 'roll'
-    let rollDir = 'forward'; // 'forward' | 'back' | 'left' | 'right' for roll axis
-    const DOUBLE_TAP_WINDOW = 0.32;
-
-    function startFlip(type) {
-      isFlipping = true;
-      flipType = type;
-      flipAngle = 0;
-      flipTargetAngle = Math.PI * 2;
-      onGround = false;
-
-      const camFwdX = -Math.sin(yaw);
-      const camFwdZ = -Math.cos(yaw);
-      const camRightX = Math.cos(yaw);
-      const camRightZ = -Math.sin(yaw);
-
-      if (type === 'front') {
-        velocity.y = JUMP_VEL * 1.25;
-        // Align to camera-forward so the rotation axis matches screen-space
-        player.rotation.y = yaw + Math.PI;
-        velocity.x = camFwdX * 6;
-        velocity.z = camFwdZ * 6;
-      } else if (type === 'back') {
-        velocity.y = JUMP_VEL * 1.2;
-        // Align player to face camera-forward (away from camera) so the
-        // body's local axes match screen-space for the flip
-        player.rotation.y = yaw + Math.PI;
-        velocity.x = -camFwdX * 4;
-        velocity.z = -camFwdZ * 4;
-      } else if (type === 'sideL') {
-        velocity.y = JUMP_VEL * 1.15;
-        player.rotation.y = yaw + Math.PI;
-        velocity.x = -camRightX * 6;
-        velocity.z = -camRightZ * 6;
-      } else if (type === 'sideR') {
-        velocity.y = JUMP_VEL * 1.15;
-        player.rotation.y = yaw + Math.PI;
-        velocity.x = camRightX * 6;
-        velocity.z = camRightZ * 6;
-      } else if (type === 'roll') {
-        velocity.y = 3.5;
-        player.rotation.y = yaw + Math.PI;
-        let dx = 0, dz = 0;
-        if (rollDir === 'forward')      { dx = camFwdX;     dz = camFwdZ; }
-        else if (rollDir === 'back')    { dx = -camFwdX;    dz = -camFwdZ; }
-        else if (rollDir === 'right')   { dx = camRightX;   dz = camRightZ; }
-        else if (rollDir === 'left')    { dx = -camRightX;  dz = -camRightZ; }
-        velocity.x = dx * 14;
-        velocity.z = dz * 14;
-      }
-    }
-
-    function tryJump() {
-      if (onGround && !isFlipping) {
-        velocity.y = JUMP_VEL;
-        onGround = false;
-      }
-    }
-
-    function tryAirFlip(type) {
-      if (onGround || playerState !== 'normal') return;
-      if (isFlipping) {
-        // Same trick pressed again mid-flip: extend to a continuous double rotation
-        if (flipType === type && flipTargetAngle < Math.PI * 4 && flipAngle < Math.PI * 3) {
-          flipTargetAngle = Math.PI * 4;
-          // Bump y velocity so we stay airborne long enough for the second rotation
-          velocity.y = Math.max(velocity.y, 17);
-        }
-        return;
-      }
-      startFlip(type);
-    }
-
-    function tryDirectionalRoll(code) {
-      const now = performance.now() / 1000;
-      const doubleTap = (now - lastTap[code]) < DOUBLE_TAP_WINDOW;
-      lastTap[code] = now;
-      if (!doubleTap) return;
-      if (!onGround || isFlipping || playerState !== 'normal') return;
-      const map = { KeyW: 'forward', KeyS: 'back', KeyA: 'left', KeyD: 'right' };
-      rollDir = map[code];
-      startFlip('roll');
-    }
-
-    window.addEventListener('keydown', (e) => {
-      if (e.repeat) return;
-      keys[e.code] = true;
-      if (playerState === 'hanging') {
-        if (e.code === 'KeyW') startClimb();
-        else if (e.code === 'Space' || e.code === 'KeyS') releaseLedge();
-        return;
-      }
-      if (playerState === 'climbing') return;
-      if (e.code === 'Space') tryJump();
-      if (e.code === 'KeyW') { tryAirFlip('front'); tryDirectionalRoll('KeyW'); }
-      if (e.code === 'KeyS') { tryAirFlip('back');  tryDirectionalRoll('KeyS'); }
-      if (e.code === 'KeyA') { tryAirFlip('sideL'); tryDirectionalRoll('KeyA'); }
-      if (e.code === 'KeyD') { tryAirFlip('sideR'); tryDirectionalRoll('KeyD'); }
-      if (e.code === 'KeyR') {
-        playerPos.copy(startPos);
-        velocity.set(0, 0, 0);
-        isFlipping = false;
-        flipAngle = 0;
-        flipType = null;
-        bodyGroup.rotation.x = 0;
-        bodyGroup.rotation.z = 0;
-        playerState = 'normal';
-      }
-    });
-    window.addEventListener('keyup', (e) => { keys[e.code] = false; });
-
-    // ---------- Physics ----------
     const GRAVITY = -28;
     const JUMP_VEL = 12;
     const MOVE_SPEED = 6;
@@ -983,43 +712,284 @@
     const GROUND_FRICTION = 12;
     const FLIP_SPEED = Math.PI * 3.2;
 
-    // ---------- Ledge grab / climb ----------
-    let playerState = 'normal'; // 'normal' | 'hanging' | 'climbing'
-    let hangCollider = null;
-    let hangFace = '';
-    let climbT = 0;
-    const CLIMB_DURATION = 0.55;
-    const climbStart = new THREE.Vector3();
-    const climbTop = new THREE.Vector3();
-    const climbTarget = new THREE.Vector3();
-    const HAND_HEIGHT = 1.5;       // hand offset from feet
-    const GRAB_VERTICAL_TOL = 0.35;
-    const GRAB_PROBE = PLAYER_RADIUS + 0.25;
+    // ---------- Shared materials ----------
+    const skinMat   = new THREE.MeshStandardMaterial({ color: 0xe6b88a, roughness: 0.85 });
+    const hairMat   = new THREE.MeshStandardMaterial({ color: 0x6e4d20, roughness: 0.9 });
+    const jeansMat  = new THREE.MeshStandardMaterial({ color: 0x121319, roughness: 0.85 });
+    const shoeMat   = new THREE.MeshStandardMaterial({ color: 0x0d0d10, roughness: 0.55 });
+    const soleMat   = new THREE.MeshStandardMaterial({ color: 0xf2f2f2, roughness: 0.9 });
+    const frameMat  = new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.4, metalness: 0.6 });
+    const lensMat   = new THREE.MeshStandardMaterial({ color: 0xeef4ff, roughness: 0.05, metalness: 0.2, transparent: true, opacity: 0.22 });
+    const mouthMat  = new THREE.MeshStandardMaterial({ color: 0x5a2a22, roughness: 0.6 });
 
-    function tryLedgeGrab() {
-      if (playerState !== 'normal') return;
-      if (isFlipping) return;
-      if (velocity.y > 3) return; // only when not strongly rising
+    // ---------- Player factory ----------
+    function createPlayer(spawn, shirtColor, keyMap) {
+      const group = new THREE.Group();
+      const bodyGroup = new THREE.Group();
+      bodyGroup.position.y = FLIP_PIVOT_Y;
+      group.add(bodyGroup);
 
-      const facing = player.rotation.y;
-      const fx = Math.sin(facing);
-      const fz = Math.cos(facing);
-      const handY = playerPos.y + HAND_HEIGHT;
+      const shirtMat = new THREE.MeshStandardMaterial({ color: shirtColor, roughness: 0.85 });
+
+      function part(geo, mat, x, y, z) {
+        const m = new THREE.Mesh(geo, mat);
+        m.position.set(x, y - FLIP_PIVOT_Y, z);
+        m.castShadow = true;
+        bodyGroup.add(m);
+        return m;
+      }
+
+      // Athletic torso: wider chest tapering to narrower waist
+      part(new THREE.BoxGeometry(0.74, 0.36, 0.4), shirtMat, 0, 1.27, 0);
+      part(new THREE.BoxGeometry(0.6, 0.32, 0.38), shirtMat, 0, 0.93, 0);
+      // Neck + head
+      part(new THREE.BoxGeometry(0.22, 0.1, 0.22), skinMat, 0, 1.5, 0);
+      part(new THREE.BoxGeometry(0.5, 0.5, 0.5), skinMat, 0, 1.79, 0);
+      // Hair
+      part(new THREE.BoxGeometry(0.56, 0.18, 0.56), hairMat, 0, 2.02, 0);
+      part(new THREE.BoxGeometry(0.5, 0.07, 0.06), hairMat, 0, 1.94, 0.255);
+      part(new THREE.BoxGeometry(0.06, 0.16, 0.5), hairMat, -0.255, 1.92, 0);
+      part(new THREE.BoxGeometry(0.06, 0.16, 0.5), hairMat,  0.255, 1.92, 0);
+      // Ears
+      part(new THREE.BoxGeometry(0.06, 0.18, 0.14), skinMat, -0.28, 1.76, -0.02);
+      part(new THREE.BoxGeometry(0.06, 0.18, 0.14), skinMat,  0.28, 1.76, -0.02);
+      // Glasses
+      part(new THREE.BoxGeometry(0.18, 0.13, 0.025), frameMat, -0.13, 1.78, 0.255);
+      part(new THREE.BoxGeometry(0.18, 0.13, 0.025), frameMat,  0.13, 1.78, 0.255);
+      part(new THREE.BoxGeometry(0.13, 0.105, 0.005), lensMat, -0.13, 1.78, 0.27);
+      part(new THREE.BoxGeometry(0.13, 0.105, 0.005), lensMat,  0.13, 1.78, 0.27);
+      part(new THREE.BoxGeometry(0.08, 0.025, 0.025), frameMat, 0, 1.78, 0.26);
+      part(new THREE.BoxGeometry(0.02, 0.025, 0.22), frameMat, -0.225, 1.78, 0.15);
+      part(new THREE.BoxGeometry(0.02, 0.025, 0.22), frameMat,  0.225, 1.78, 0.15);
+      // Nose + mouth
+      part(new THREE.BoxGeometry(0.07, 0.1, 0.05), skinMat, 0, 1.66, 0.275);
+      part(new THREE.BoxGeometry(0.05, 0.05, 0.05), skinMat, 0, 1.62, 0.275);
+      part(new THREE.BoxGeometry(0.15, 0.025, 0.005), mouthMat, 0, 1.55, 0.255);
+
+      function makeArm(sx) {
+        const g = new THREE.Group();
+        g.position.set(sx, 1.42 - FLIP_PIVOT_Y, 0);
+        bodyGroup.add(g);
+        [
+          { geo: new THREE.BoxGeometry(0.2, 0.34, 0.24),  mat: shirtMat, y: -0.17 },
+          { geo: new THREE.BoxGeometry(0.18, 0.36, 0.22), mat: skinMat,  y: -0.52 },
+          { geo: new THREE.BoxGeometry(0.2, 0.14, 0.22),  mat: skinMat,  y: -0.77 },
+        ].forEach(d => {
+          const m = new THREE.Mesh(d.geo, d.mat);
+          m.position.y = d.y;
+          m.castShadow = true;
+          g.add(m);
+        });
+        return g;
+      }
+      const armL = makeArm(-0.46);
+      const armR = makeArm(0.46);
+
+      function makeLeg(side) {
+        const sign = side === 'L' ? -1 : 1;
+        const hip = new THREE.Group();
+        hip.position.set(sign * 0.18, 0.86 - FLIP_PIVOT_Y, 0);
+        bodyGroup.add(hip);
+
+        const thigh = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.4, 0.42), jeansMat);
+        thigh.position.y = -0.2;
+        thigh.castShadow = true;
+        hip.add(thigh);
+
+        const knee = new THREE.Group();
+        knee.position.y = -0.4;
+        hip.add(knee);
+
+        const shin = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.34, 0.4), jeansMat);
+        shin.position.y = -0.17;
+        shin.castShadow = true;
+        knee.add(shin);
+
+        const shoe = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.12, 0.55), shoeMat);
+        shoe.position.set(0, -0.4, 0.07);
+        shoe.castShadow = true;
+        knee.add(shoe);
+        const sole = new THREE.Mesh(new THREE.BoxGeometry(0.38, 0.06, 0.57), soleMat);
+        sole.position.set(0, -0.46, 0.07);
+        sole.castShadow = true;
+        knee.add(sole);
+        const stripe = new THREE.Mesh(new THREE.BoxGeometry(0.005, 0.05, 0.4), soleMat);
+        stripe.position.set(sign * 0.18, -0.4, 0.07);
+        stripe.castShadow = true;
+        knee.add(stripe);
+
+        hip.knee = knee;
+        return hip;
+      }
+      const legL = makeLeg('L');
+      const legR = makeLeg('R');
+      scene.add(group);
+
+      const camera = new THREE.PerspectiveCamera(70, 1, 0.1, 1000);
+
+      return {
+        spawn: spawn.clone(),
+        pos: spawn.clone(),
+        velocity: new THREE.Vector3(),
+        yaw: Math.PI,
+        onGround: false,
+        state: 'normal',
+        isFlipping: false,
+        flipAngle: 0,
+        flipTargetAngle: Math.PI * 2,
+        flipType: null,
+        rollDir: 'forward',
+        walkPhase: 0,
+        hangCollider: null,
+        hangFace: '',
+        climbT: 0,
+        climbStart: new THREE.Vector3(),
+        climbTop: new THREE.Vector3(),
+        climbTarget: new THREE.Vector3(),
+        lastTap: { fwd: -10, back: -10, left: -10, right: -10 },
+        keys: keyMap,
+        group, bodyGroup, armL, armR, legL, legR,
+        camera,
+      };
+    }
+
+    const players = [
+      createPlayer(new THREE.Vector3(-1.5, 2, 0), 0x1f6fc8, {
+        jump: 'Space', fwd: 'KeyW', back: 'KeyS', left: 'KeyA', right: 'KeyD', sprint: 'ShiftLeft',
+      }),
+      createPlayer(new THREE.Vector3(1.5, 2, 0),  0xc83a3a, {
+        jump: 'Enter', fwd: 'ArrowUp', back: 'ArrowDown', left: 'ArrowLeft', right: 'ArrowRight', sprint: 'KeyM',
+      }),
+    ];
+
+    // ---------- Input ----------
+    const keys = {};
+
+    function startFlip(p, type) {
+      p.isFlipping = true;
+      p.flipType = type;
+      p.flipAngle = 0;
+      p.flipTargetAngle = Math.PI * 2;
+      p.onGround = false;
+
+      const fx = Math.sin(p.yaw);
+      const fz = Math.cos(p.yaw);
+      const rx = Math.cos(p.yaw);
+      const rz = -Math.sin(p.yaw);
+
+      if (type === 'front') {
+        p.velocity.y = JUMP_VEL * 1.25;
+        p.velocity.x = fx * 6;
+        p.velocity.z = fz * 6;
+      } else if (type === 'back') {
+        p.velocity.y = JUMP_VEL * 1.2;
+        p.velocity.x = -fx * 4;
+        p.velocity.z = -fz * 4;
+      } else if (type === 'sideL') {
+        p.velocity.y = JUMP_VEL * 1.15;
+        p.velocity.x = -rx * 6;
+        p.velocity.z = -rz * 6;
+      } else if (type === 'sideR') {
+        p.velocity.y = JUMP_VEL * 1.15;
+        p.velocity.x = rx * 6;
+        p.velocity.z = rz * 6;
+      } else if (type === 'roll') {
+        p.velocity.y = 3.5;
+        let dx = 0, dz = 0;
+        if (p.rollDir === 'forward')      { dx = fx;  dz = fz; }
+        else if (p.rollDir === 'back')    { dx = -fx; dz = -fz; }
+        else if (p.rollDir === 'right')   { dx = rx;  dz = rz; }
+        else if (p.rollDir === 'left')    { dx = -rx; dz = -rz; }
+        p.velocity.x = dx * 14;
+        p.velocity.z = dz * 14;
+      }
+    }
+
+    function tryJump(p) {
+      if (p.onGround && !p.isFlipping) {
+        p.velocity.y = JUMP_VEL;
+        p.onGround = false;
+      }
+    }
+
+    function tryAirFlip(p, type) {
+      if (p.onGround || p.state !== 'normal') return;
+      if (p.isFlipping) {
+        if (p.flipType === type && p.flipTargetAngle < Math.PI * 4 && p.flipAngle < Math.PI * 3) {
+          p.flipTargetAngle = Math.PI * 4;
+          p.velocity.y = Math.max(p.velocity.y, 17);
+        }
+        return;
+      }
+      startFlip(p, type);
+    }
+
+    function tryDirectionalRoll(p, dirKey) {
+      const now = performance.now() / 1000;
+      const doubleTap = (now - p.lastTap[dirKey]) < DOUBLE_TAP_WINDOW;
+      p.lastTap[dirKey] = now;
+      if (!doubleTap) return;
+      if (!p.onGround || p.isFlipping || p.state !== 'normal') return;
+      const map = { fwd: 'forward', back: 'back', left: 'left', right: 'right' };
+      p.rollDir = map[dirKey];
+      startFlip(p, 'roll');
+    }
+
+    function aabbOverlap(a, b) {
+      return a.min.x < b.max.x && a.max.x > b.min.x &&
+             a.min.y < b.max.y && a.max.y > b.min.y &&
+             a.min.z < b.max.z && a.max.z > b.min.z;
+    }
+
+    function playerAABB(pos) {
+      return {
+        min: new THREE.Vector3(pos.x - PLAYER_RADIUS, pos.y, pos.z - PLAYER_RADIUS),
+        max: new THREE.Vector3(pos.x + PLAYER_RADIUS, pos.y + PLAYER_HEIGHT, pos.z + PLAYER_RADIUS),
+      };
+    }
+
+    function moveAxis(p, axis, delta) {
+      p.pos[axis] += delta;
+      const me = playerAABB(p.pos);
+      for (const c of colliders) {
+        if (!aabbOverlap(me, c)) continue;
+        if (delta > 0) {
+          const push = me.max[axis] - c.min[axis];
+          p.pos[axis] -= push;
+        } else if (delta < 0) {
+          const push = c.max[axis] - me.min[axis];
+          p.pos[axis] += push;
+        }
+        if (axis === 'y') {
+          if (delta < 0) p.onGround = true;
+          p.velocity.y = 0;
+        }
+        me.min[axis] = p.pos[axis] - (axis === 'y' ? 0 : PLAYER_RADIUS);
+        me.max[axis] = p.pos[axis] + (axis === 'y' ? PLAYER_HEIGHT : PLAYER_RADIUS);
+      }
+    }
+
+    function tryLedgeGrab(p) {
+      if (p.state !== 'normal') return;
+      if (p.isFlipping) return;
+      if (p.velocity.y > 3) return;
+      const fx = Math.sin(p.yaw);
+      const fz = Math.cos(p.yaw);
+      const handY = p.pos.y + HAND_HEIGHT;
 
       for (const c of colliders) {
         const top = c.max.y;
         if (Math.abs(handY - top) > GRAB_VERTICAL_TOL) continue;
 
-        const probeX = playerPos.x + fx * GRAB_PROBE;
-        const probeZ = playerPos.z + fz * GRAB_PROBE;
+        const probeX = p.pos.x + fx * GRAB_PROBE;
+        const probeZ = p.pos.z + fz * GRAB_PROBE;
         if (probeX < c.min.x || probeX > c.max.x) continue;
         if (probeZ < c.min.z || probeZ > c.max.z) continue;
 
-        const insideX = playerPos.x > c.min.x && playerPos.x < c.max.x;
-        const insideZ = playerPos.z > c.min.z && playerPos.z < c.max.z;
+        const insideX = p.pos.x > c.min.x && p.pos.x < c.max.x;
+        const insideZ = p.pos.z > c.min.z && p.pos.z < c.max.z;
         if (insideX && insideZ) continue;
 
-        // Ensure space above the ledge is free for the pull-up target
         const aboveY = top + 0.05;
         const aboveAABB = {
           min: new THREE.Vector3(probeX - PLAYER_RADIUS, aboveY, probeZ - PLAYER_RADIUS),
@@ -1032,280 +1002,270 @@
         }
         if (blocked) continue;
 
-        // Determine which face was grabbed
         let face;
-        const distXNeg = c.min.x - playerPos.x;
-        const distXPos = playerPos.x - c.max.x;
-        const distZNeg = c.min.z - playerPos.z;
-        const distZPos = playerPos.z - c.max.z;
-        const dx = Math.max(distXNeg, distXPos);
-        const dz = Math.max(distZNeg, distZPos);
-        if (dx >= dz) {
-          face = playerPos.x < c.min.x ? 'xneg' : 'xpos';
-        } else {
-          face = playerPos.z < c.min.z ? 'zneg' : 'zpos';
-        }
+        const dXn = c.min.x - p.pos.x, dXp = p.pos.x - c.max.x;
+        const dZn = c.min.z - p.pos.z, dZp = p.pos.z - c.max.z;
+        const dx = Math.max(dXn, dXp);
+        const dz = Math.max(dZn, dZp);
+        if (dx >= dz) face = p.pos.x < c.min.x ? 'xneg' : 'xpos';
+        else          face = p.pos.z < c.min.z ? 'zneg' : 'zpos';
 
-        // Snap player to ledge
-        playerPos.y = top - HAND_HEIGHT;
-        if (face === 'xneg') {
-          playerPos.x = c.min.x - PLAYER_RADIUS - 0.001;
-          player.rotation.y = Math.PI / 2;
-        } else if (face === 'xpos') {
-          playerPos.x = c.max.x + PLAYER_RADIUS + 0.001;
-          player.rotation.y = -Math.PI / 2;
-        } else if (face === 'zneg') {
-          playerPos.z = c.min.z - PLAYER_RADIUS - 0.001;
-          player.rotation.y = 0;
-        } else {
-          playerPos.z = c.max.z + PLAYER_RADIUS + 0.001;
-          player.rotation.y = Math.PI;
-        }
-        velocity.set(0, 0, 0);
-        playerState = 'hanging';
-        hangCollider = c;
-        hangFace = face;
+        p.pos.y = top - HAND_HEIGHT;
+        if (face === 'xneg')      { p.pos.x = c.min.x - PLAYER_RADIUS - 0.001; p.yaw = Math.PI / 2; }
+        else if (face === 'xpos') { p.pos.x = c.max.x + PLAYER_RADIUS + 0.001; p.yaw = -Math.PI / 2; }
+        else if (face === 'zneg') { p.pos.z = c.min.z - PLAYER_RADIUS - 0.001; p.yaw = 0; }
+        else                       { p.pos.z = c.max.z + PLAYER_RADIUS + 0.001; p.yaw = Math.PI; }
+        p.velocity.set(0, 0, 0);
+        p.state = 'hanging';
+        p.hangCollider = c;
+        p.hangFace = face;
         return;
       }
     }
 
-    function startClimb() {
-      if (!hangCollider) return;
-      climbStart.copy(playerPos);
-      climbTop.set(playerPos.x, hangCollider.max.y + 0.001, playerPos.z);
-      climbTarget.copy(climbTop);
+    function startClimb(p) {
+      if (!p.hangCollider) return;
+      p.climbStart.copy(p.pos);
+      p.climbTop.set(p.pos.x, p.hangCollider.max.y + 0.001, p.pos.z);
+      p.climbTarget.copy(p.climbTop);
       const inset = PLAYER_RADIUS + 0.35;
-      if (hangFace === 'xneg') climbTarget.x = hangCollider.min.x + inset;
-      else if (hangFace === 'xpos') climbTarget.x = hangCollider.max.x - inset;
-      else if (hangFace === 'zneg') climbTarget.z = hangCollider.min.z + inset;
-      else climbTarget.z = hangCollider.max.z - inset;
-      climbT = 0;
-      playerState = 'climbing';
+      if (p.hangFace === 'xneg')      p.climbTarget.x = p.hangCollider.min.x + inset;
+      else if (p.hangFace === 'xpos') p.climbTarget.x = p.hangCollider.max.x - inset;
+      else if (p.hangFace === 'zneg') p.climbTarget.z = p.hangCollider.min.z + inset;
+      else                            p.climbTarget.z = p.hangCollider.max.z - inset;
+      p.climbT = 0;
+      p.state = 'climbing';
     }
 
-    function releaseLedge() {
-      playerState = 'normal';
-      hangCollider = null;
-      // small drop-off impulse so we don't immediately re-grab
-      velocity.set(0, -2, 0);
+    function releaseLedge(p) {
+      p.state = 'normal';
+      p.hangCollider = null;
+      p.velocity.set(0, -2, 0);
     }
 
-    function playerAABB(pos) {
-      return {
-        min: new THREE.Vector3(pos.x - PLAYER_RADIUS, pos.y, pos.z - PLAYER_RADIUS),
-        max: new THREE.Vector3(pos.x + PLAYER_RADIUS, pos.y + PLAYER_HEIGHT, pos.z + PLAYER_RADIUS),
-      };
+    function setHangingPose(p) {
+      p.bodyGroup.rotation.x = 0;
+      p.bodyGroup.rotation.z = 0;
+      p.legL.rotation.x = 0.15;
+      p.legR.rotation.x = -0.15;
+      p.legL.knee.rotation.x = 0;
+      p.legR.knee.rotation.x = 0;
+      p.armL.rotation.x = -2.4;
+      p.armR.rotation.x = -2.4;
     }
 
-    function aabbOverlap(a, b) {
-      return a.min.x < b.max.x && a.max.x > b.min.x &&
-             a.min.y < b.max.y && a.max.y > b.min.y &&
-             a.min.z < b.max.z && a.max.z > b.min.z;
-    }
-
-    // Move along one axis at a time and resolve collisions
-    function moveAxis(axis, delta) {
-      playerPos[axis] += delta;
-      const me = playerAABB(playerPos);
-      for (const c of colliders) {
-        if (!aabbOverlap(me, c)) continue;
-        if (delta > 0) {
-          const push = me.max[axis] - c.min[axis];
-          playerPos[axis] -= push;
-        } else if (delta < 0) {
-          const push = c.max[axis] - me.min[axis];
-          playerPos[axis] += push;
-        }
-        if (axis === 'y') {
-          if (delta < 0) onGround = true;
-          velocity.y = 0;
-        }
-        // refresh AABB
-        me.min[axis] = playerPos[axis] - (axis === 'y' ? 0 : PLAYER_RADIUS);
-        me.max[axis] = playerPos[axis] + (axis === 'y' ? PLAYER_HEIGHT : PLAYER_RADIUS);
-      }
-    }
-
-    // Animation helpers
-    let walkPhase = 0;
-
-    function setHangingPose() {
-      bodyGroup.rotation.x = 0;
-      legL.rotation.x = 0.15;
-      legR.rotation.x = -0.15;
-      legL.knee.rotation.x = 0;
-      legR.knee.rotation.x = 0;
-      armL.rotation.x = -2.4; // arms reach up to grab the ledge
-      armR.rotation.x = -2.4;
-    }
-
-    function updateCamera() {
-      const camOffset = new THREE.Vector3(
-        Math.sin(yaw) * Math.cos(pitch) * cameraDistance,
-        cameraHeight + Math.sin(-pitch) * cameraDistance,
-        Math.cos(yaw) * Math.cos(pitch) * cameraDistance
+    function updateCamera(p) {
+      const fx = Math.sin(p.yaw);
+      const fz = Math.cos(p.yaw);
+      const cp = Math.cos(PITCH);
+      const sp = Math.sin(-PITCH);
+      p.camera.position.set(
+        p.pos.x - fx * cp * cameraDistance,
+        p.pos.y + 1.2 + cameraHeight + sp * cameraDistance,
+        p.pos.z - fz * cp * cameraDistance
       );
-      camera.position.copy(playerPos).add(new THREE.Vector3(0, 1.2, 0)).add(camOffset);
-      camera.lookAt(playerPos.x, playerPos.y + 1.2, playerPos.z);
+      p.camera.lookAt(p.pos.x, p.pos.y + 1.2, p.pos.z);
     }
 
-    function update(dt) {
-      if (playerState === 'hanging') {
-        player.position.copy(playerPos);
-        setHangingPose();
-        updateCamera();
+    function updatePlayer(p, dt) {
+      if (p.state === 'hanging') {
+        p.group.position.copy(p.pos);
+        p.group.rotation.y = p.yaw;
+        setHangingPose(p);
+        updateCamera(p);
         return;
       }
 
-      if (playerState === 'climbing') {
-        climbT = Math.min(CLIMB_DURATION, climbT + dt);
-        const t = climbT / CLIMB_DURATION;
+      if (p.state === 'climbing') {
+        p.climbT = Math.min(CLIMB_DURATION, p.climbT + dt);
+        const t = p.climbT / CLIMB_DURATION;
         const lift = Math.min(1, t / 0.6);
         const push = Math.max(0, (t - 0.6) / 0.4);
         const eLift = 1 - Math.pow(1 - lift, 2);
-        playerPos.y = climbStart.y + (climbTop.y - climbStart.y) * eLift;
-        playerPos.x = climbStart.x + (climbTarget.x - climbStart.x) * push;
-        playerPos.z = climbStart.z + (climbTarget.z - climbStart.z) * push;
-        if (climbT >= CLIMB_DURATION) {
-          playerState = 'normal';
-          velocity.set(0, 0, 0);
+        p.pos.y = p.climbStart.y + (p.climbTop.y - p.climbStart.y) * eLift;
+        p.pos.x = p.climbStart.x + (p.climbTarget.x - p.climbStart.x) * push;
+        p.pos.z = p.climbStart.z + (p.climbTarget.z - p.climbStart.z) * push;
+        if (p.climbT >= CLIMB_DURATION) {
+          p.state = 'normal';
+          p.velocity.set(0, 0, 0);
         }
-        player.position.copy(playerPos);
-        setHangingPose();
-        updateCamera();
+        p.group.position.copy(p.pos);
+        p.group.rotation.y = p.yaw;
+        setHangingPose(p);
+        updateCamera(p);
         return;
       }
 
-      // ---- normal state ----
-      const forward = new THREE.Vector3(-Math.sin(yaw), 0, -Math.cos(yaw));
-      const right = new THREE.Vector3(Math.cos(yaw), 0, -Math.sin(yaw));
-      const wish = new THREE.Vector3();
-      // Lock directional input during flips/roll so the trick keeps its boost
-      if (!isFlipping) {
-        if (keys['KeyW']) wish.add(forward);
-        if (keys['KeyS']) wish.sub(forward);
-        if (keys['KeyD']) wish.add(right);
-        if (keys['KeyA']) wish.sub(right);
+      // ---- normal ----
+      // Ground rotation via left/right keys
+      if (p.onGround && !p.isFlipping) {
+        if (keys[p.keys.left])  p.yaw += TURN_SPEED * dt;
+        if (keys[p.keys.right]) p.yaw -= TURN_SPEED * dt;
       }
 
-      const sprint = keys['ShiftLeft'] || keys['ShiftRight'];
+      const fwd = new THREE.Vector3(Math.sin(p.yaw), 0, Math.cos(p.yaw));
+      let wishForward = 0;
+      if (!p.isFlipping) {
+        if (keys[p.keys.fwd])  wishForward += 1;
+        if (keys[p.keys.back]) wishForward -= 1;
+      }
+      const sprint = keys[p.keys.sprint];
       const targetSpeed = MOVE_SPEED * (sprint ? SPRINT_MULT : 1);
 
-      if (wish.lengthSq() > 0) {
-        wish.normalize().multiplyScalar(targetSpeed);
-        const control = onGround ? 1 : AIR_CONTROL;
-        velocity.x += (wish.x - velocity.x) * Math.min(1, GROUND_FRICTION * control * dt);
-        velocity.z += (wish.z - velocity.z) * Math.min(1, GROUND_FRICTION * control * dt);
-      } else if (onGround) {
-        velocity.x -= velocity.x * Math.min(1, GROUND_FRICTION * dt);
-        velocity.z -= velocity.z * Math.min(1, GROUND_FRICTION * dt);
+      if (wishForward !== 0) {
+        const wishX = fwd.x * wishForward * targetSpeed;
+        const wishZ = fwd.z * wishForward * targetSpeed;
+        const control = p.onGround ? 1 : AIR_CONTROL;
+        p.velocity.x += (wishX - p.velocity.x) * Math.min(1, GROUND_FRICTION * control * dt);
+        p.velocity.z += (wishZ - p.velocity.z) * Math.min(1, GROUND_FRICTION * control * dt);
+      } else if (p.onGround) {
+        p.velocity.x -= p.velocity.x * Math.min(1, GROUND_FRICTION * dt);
+        p.velocity.z -= p.velocity.z * Math.min(1, GROUND_FRICTION * dt);
       }
 
-      velocity.y += GRAVITY * dt;
+      p.velocity.y += GRAVITY * dt;
+      p.onGround = false;
+      moveAxis(p, 'x', p.velocity.x * dt);
+      moveAxis(p, 'z', p.velocity.z * dt);
+      moveAxis(p, 'y', p.velocity.y * dt);
 
-      onGround = false;
-      moveAxis('x', velocity.x * dt);
-      moveAxis('z', velocity.z * dt);
-      moveAxis('y', velocity.y * dt);
-
-      if (playerPos.y < -20) {
-        playerPos.copy(startPos);
-        velocity.set(0, 0, 0);
+      if (p.pos.y < -20) {
+        p.pos.copy(p.spawn);
+        p.velocity.set(0, 0, 0);
       }
 
-      // Try ledge grab when airborne and roughly drifting toward a wall
-      if (!onGround && !isFlipping) {
-        tryLedgeGrab();
-        if (playerState === 'hanging') {
-          player.position.copy(playerPos);
-          setHangingPose();
-          updateCamera();
+      if (!p.onGround && !p.isFlipping) {
+        tryLedgeGrab(p);
+        if (p.state === 'hanging') {
+          p.group.position.copy(p.pos);
+          p.group.rotation.y = p.yaw;
+          setHangingPose(p);
+          updateCamera(p);
           return;
         }
       }
 
-      player.position.copy(playerPos);
+      p.group.position.copy(p.pos);
+      p.group.rotation.y = p.yaw;
 
-      const horizSpeed = Math.hypot(velocity.x, velocity.z);
-      // Always face away from the camera (third-person controller style).
-      // S strafes backward, A/D strafe sideways without spinning the model.
-      if (!isFlipping) {
-        const targetFacing = yaw + Math.PI;
-        let dy = targetFacing - player.rotation.y;
-        while (dy > Math.PI) dy -= Math.PI * 2;
-        while (dy < -Math.PI) dy += Math.PI * 2;
-        player.rotation.y += dy * Math.min(1, 10 * dt);
-      }
+      const horizSpeed = Math.hypot(p.velocity.x, p.velocity.z);
 
-      if (isFlipping) {
-        const speed = (flipType === 'roll') ? Math.PI * 8 : FLIP_SPEED;
-        flipAngle += speed * dt;
-        const finished = flipAngle >= flipTargetAngle;
-        const earlyLand = onGround && flipAngle > Math.PI * 0.7 && flipType !== 'roll';
-        const rollLanded = flipType === 'roll' && onGround && flipAngle > Math.PI * 0.5;
+      if (p.isFlipping) {
+        const speed = (p.flipType === 'roll') ? Math.PI * 8 : FLIP_SPEED;
+        p.flipAngle += speed * dt;
+        const finished = p.flipAngle >= p.flipTargetAngle;
+        const earlyLand = p.onGround && p.flipAngle > Math.PI * 0.7 && p.flipType !== 'roll';
+        const rollLanded = p.flipType === 'roll' && p.onGround && p.flipAngle > Math.PI * 0.5;
         if (finished || earlyLand || rollLanded) {
-          isFlipping = false;
-          flipAngle = 0;
-          flipType = null;
-          bodyGroup.rotation.x = 0;
-          bodyGroup.rotation.z = 0;
-          legL.knee.rotation.x = 0;
-          legR.knee.rotation.x = 0;
+          p.isFlipping = false;
+          p.flipAngle = 0;
+          p.flipType = null;
+          p.bodyGroup.rotation.x = 0;
+          p.bodyGroup.rotation.z = 0;
+          p.legL.knee.rotation.x = 0;
+          p.legR.knee.rotation.x = 0;
         } else {
-          if (flipType === 'front') {
-            bodyGroup.rotation.x = flipAngle;
-            bodyGroup.rotation.z = 0;
-          } else if (flipType === 'back') {
-            bodyGroup.rotation.x = -flipAngle;
-            bodyGroup.rotation.z = 0;
-          } else if (flipType === 'sideL') {
-            bodyGroup.rotation.x = 0;
-            bodyGroup.rotation.z = -flipAngle;
-          } else if (flipType === 'sideR') {
-            bodyGroup.rotation.x = 0;
-            bodyGroup.rotation.z = flipAngle;
-          } else if (flipType === 'roll') {
-            if (rollDir === 'forward')      { bodyGroup.rotation.x =  flipAngle; bodyGroup.rotation.z = 0; }
-            else if (rollDir === 'back')    { bodyGroup.rotation.x = -flipAngle; bodyGroup.rotation.z = 0; }
-            else if (rollDir === 'left')    { bodyGroup.rotation.x = 0; bodyGroup.rotation.z = -flipAngle; }
-            else if (rollDir === 'right')   { bodyGroup.rotation.x = 0; bodyGroup.rotation.z =  flipAngle; }
+          if (p.flipType === 'front') {
+            p.bodyGroup.rotation.x = p.flipAngle; p.bodyGroup.rotation.z = 0;
+          } else if (p.flipType === 'back') {
+            p.bodyGroup.rotation.x = -p.flipAngle; p.bodyGroup.rotation.z = 0;
+          } else if (p.flipType === 'sideL') {
+            p.bodyGroup.rotation.x = 0; p.bodyGroup.rotation.z = -p.flipAngle;
+          } else if (p.flipType === 'sideR') {
+            p.bodyGroup.rotation.x = 0; p.bodyGroup.rotation.z = p.flipAngle;
+          } else if (p.flipType === 'roll') {
+            if (p.rollDir === 'forward')    { p.bodyGroup.rotation.x =  p.flipAngle; p.bodyGroup.rotation.z = 0; }
+            else if (p.rollDir === 'back')  { p.bodyGroup.rotation.x = -p.flipAngle; p.bodyGroup.rotation.z = 0; }
+            else if (p.rollDir === 'left')  { p.bodyGroup.rotation.x = 0; p.bodyGroup.rotation.z = -p.flipAngle; }
+            else if (p.rollDir === 'right') { p.bodyGroup.rotation.x = 0; p.bodyGroup.rotation.z =  p.flipAngle; }
           }
         }
-        // Tuck pose: hips flex forward (knees to belly), knees fold shins back
-        const t = Math.min(1, flipAngle / 0.6) * Math.min(1, (flipTargetAngle - flipAngle) / 0.6);
+        const t = Math.min(1, p.flipAngle / 0.6) * Math.min(1, (p.flipTargetAngle - p.flipAngle) / 0.6);
         const tuck = Math.max(0.15, t);
-        legL.rotation.x = -1.8 * tuck;
-        legR.rotation.x = -1.8 * tuck;
-        legL.knee.rotation.x = 2.0 * tuck;
-        legR.knee.rotation.x = 2.0 * tuck;
-        armL.rotation.x = -1.5 * tuck;
-        armR.rotation.x = -1.5 * tuck;
+        p.legL.rotation.x = -1.8 * tuck;
+        p.legR.rotation.x = -1.8 * tuck;
+        p.legL.knee.rotation.x = 2.0 * tuck;
+        p.legR.knee.rotation.x = 2.0 * tuck;
+        p.armL.rotation.x = -1.5 * tuck;
+        p.armR.rotation.x = -1.5 * tuck;
       } else {
-        if (legL.knee) { legL.knee.rotation.x = 0; legR.knee.rotation.x = 0; }
-        bodyGroup.rotation.x = 0;
-        bodyGroup.rotation.z = 0;
-        if (onGround && horizSpeed > 0.2) {
-          walkPhase += dt * horizSpeed * 1.6;
-        } else {
-          walkPhase *= 0.9;
-        }
-        const swing = Math.sin(walkPhase) * 0.6;
-        legL.rotation.x = swing;
-        legR.rotation.x = -swing;
-        armL.rotation.x = -swing * 0.8;
-        armR.rotation.x = swing * 0.8;
+        p.legL.knee.rotation.x = 0;
+        p.legR.knee.rotation.x = 0;
+        p.bodyGroup.rotation.x = 0;
+        p.bodyGroup.rotation.z = 0;
+        if (p.onGround && horizSpeed > 0.2) p.walkPhase += dt * horizSpeed * 1.6;
+        else p.walkPhase *= 0.9;
+        const swing = Math.sin(p.walkPhase) * 0.6;
+        p.legL.rotation.x = swing;
+        p.legR.rotation.x = -swing;
+        p.armL.rotation.x = -swing * 0.8;
+        p.armR.rotation.x = swing * 0.8;
       }
 
-      updateCamera();
+      updateCamera(p);
     }
 
-    // ---------- Loop ----------
+    function resetPlayer(p) {
+      p.pos.copy(p.spawn);
+      p.velocity.set(0, 0, 0);
+      p.isFlipping = false;
+      p.flipAngle = 0;
+      p.flipType = null;
+      p.bodyGroup.rotation.x = 0;
+      p.bodyGroup.rotation.z = 0;
+      p.state = 'normal';
+      p.yaw = Math.PI;
+    }
+
+    window.addEventListener('keydown', (e) => {
+      if (e.repeat) return;
+      keys[e.code] = true;
+      // Prevent the page from scrolling on arrow keys / space
+      if (['Space','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.code)) e.preventDefault();
+
+      for (const p of players) {
+        if (p.state === 'hanging') {
+          if (e.code === p.keys.fwd) startClimb(p);
+          else if (e.code === p.keys.jump || e.code === p.keys.back) releaseLedge(p);
+          continue;
+        }
+        if (p.state === 'climbing') continue;
+        if (e.code === p.keys.jump) tryJump(p);
+        if (e.code === p.keys.fwd)   { tryAirFlip(p, 'front'); tryDirectionalRoll(p, 'fwd'); }
+        if (e.code === p.keys.back)  { tryAirFlip(p, 'back');  tryDirectionalRoll(p, 'back'); }
+        if (e.code === p.keys.left)  { tryAirFlip(p, 'sideL'); tryDirectionalRoll(p, 'left'); }
+        if (e.code === p.keys.right) { tryAirFlip(p, 'sideR'); tryDirectionalRoll(p, 'right'); }
+      }
+      if (e.code === 'KeyR') players.forEach(resetPlayer);
+    }, { passive: false });
+    window.addEventListener('keyup', (e) => { keys[e.code] = false; });
+
+    // ---------- Render loop ----------
+    function renderSplit() {
+      const w = window.innerWidth;
+      const h = window.innerHeight;
+      const halfW = Math.floor(w / 2);
+      renderer.setScissorTest(true);
+      // Player 1: left half
+      renderer.setViewport(0, 0, halfW, h);
+      renderer.setScissor(0, 0, halfW, h);
+      players[0].camera.aspect = halfW / h;
+      players[0].camera.updateProjectionMatrix();
+      renderer.render(scene, players[0].camera);
+      // Player 2: right half
+      renderer.setViewport(halfW, 0, w - halfW, h);
+      renderer.setScissor(halfW, 0, w - halfW, h);
+      players[1].camera.aspect = (w - halfW) / h;
+      players[1].camera.updateProjectionMatrix();
+      renderer.render(scene, players[1].camera);
+    }
+
     let prev = performance.now();
     function animate(now) {
       const dt = Math.min(0.05, (now - prev) / 1000);
       prev = now;
-      update(dt);
-      renderer.render(scene, camera);
+      for (const p of players) updatePlayer(p, dt);
+      renderSplit();
       requestAnimationFrame(animate);
     }
     requestAnimationFrame(animate);
