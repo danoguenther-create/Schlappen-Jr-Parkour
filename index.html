@@ -36,10 +36,11 @@
     WASD = Laufen (S = rückwärts) &nbsp; Shift = Sprinten<br>
     Space = Springen &nbsp; Doppel-Tap WASD = Dive Roll in die Richtung<br>
     In der Luft: W = Frontflip &nbsp; S = Backflip &nbsp; A/D = Sideflip<br>
+    In der Luft Doppel-Tap = Double Flip<br>
     An Kante: W = Hochziehen &nbsp; Space/S = Loslassen<br>
     Maus = Kamera &nbsp; R = Reset Position
   </div>
-  <div id="version">build 2026-05-01 #face-strafe-rolls</div>
+  <div id="version">build 2026-05-01 #ears-doubleflip</div>
   <div id="crosshair"></div>
   <div id="lock">Klicken zum Starten (Maus wird gefangen)</div>
 
@@ -734,13 +735,15 @@
     bodyPart(new THREE.BoxGeometry(0.22, 0.1, 0.22), skinMat, 0, 1.5, 0);
     bodyPart(new THREE.BoxGeometry(0.5, 0.5, 0.5), skinMat, 0, 1.79, 0);
 
-    // Hair: mid-fade — darker faded sides, blonde top + fringe
-    bodyPart(new THREE.BoxGeometry(0.04, 0.16, 0.5), fadeMat, -0.255, 1.74, 0);
-    bodyPart(new THREE.BoxGeometry(0.04, 0.16, 0.5), fadeMat,  0.255, 1.74, 0);
+    // Hair: dark blonde top + fringe + upper sides (lower sides are skin = mid-fade look)
     bodyPart(new THREE.BoxGeometry(0.56, 0.18, 0.56), hairMat, 0, 2.02, 0); // top hair
     bodyPart(new THREE.BoxGeometry(0.5, 0.07, 0.06), hairMat, 0, 1.94, 0.255); // fringe
     bodyPart(new THREE.BoxGeometry(0.06, 0.16, 0.5), hairMat, -0.255, 1.92, 0); // upper sides
     bodyPart(new THREE.BoxGeometry(0.06, 0.16, 0.5), hairMat,  0.255, 1.92, 0);
+
+    // Ears
+    bodyPart(new THREE.BoxGeometry(0.06, 0.18, 0.14), skinMat, -0.28, 1.76, -0.02);
+    bodyPart(new THREE.BoxGeometry(0.06, 0.18, 0.14), skinMat,  0.28, 1.76, -0.02);
 
     // Glasses (clear lenses)
     bodyPart(new THREE.BoxGeometry(0.18, 0.13, 0.025), frameMat, -0.13, 1.78, 0.255);
@@ -859,6 +862,7 @@
     const lastTap = { KeyW: -10, KeyS: -10, KeyA: -10, KeyD: -10 };
     let isFlipping = false;
     let flipAngle = 0;
+    let flipTargetAngle = Math.PI * 2;
     let flipType = null; // 'front' | 'back' | 'sideL' | 'sideR' | 'roll'
     let rollDir = 'forward'; // 'forward' | 'back' | 'left' | 'right' for roll axis
     const DOUBLE_TAP_WINDOW = 0.32;
@@ -867,6 +871,7 @@
       isFlipping = true;
       flipType = type;
       flipAngle = 0;
+      flipTargetAngle = Math.PI * 2;
       onGround = false;
 
       const camFwdX = -Math.sin(yaw);
@@ -918,7 +923,16 @@
     }
 
     function tryAirFlip(type) {
-      if (onGround || isFlipping || playerState !== 'normal') return;
+      if (onGround || playerState !== 'normal') return;
+      if (isFlipping) {
+        // Same trick pressed again mid-flip: extend to a continuous double rotation
+        if (flipType === type && flipTargetAngle < Math.PI * 4 && flipAngle < Math.PI * 3) {
+          flipTargetAngle = Math.PI * 4;
+          // Bump y velocity so we stay airborne long enough for the second rotation
+          velocity.y = Math.max(velocity.y, 17);
+        }
+        return;
+      }
       startFlip(type);
     }
 
@@ -1226,7 +1240,7 @@
       if (isFlipping) {
         const speed = (flipType === 'roll') ? Math.PI * 8 : FLIP_SPEED;
         flipAngle += speed * dt;
-        const finished = flipAngle >= Math.PI * 2;
+        const finished = flipAngle >= flipTargetAngle;
         const earlyLand = onGround && flipAngle > Math.PI * 0.7 && flipType !== 'roll';
         const rollLanded = flipType === 'roll' && onGround && flipAngle > Math.PI * 0.5;
         if (finished || earlyLand || rollLanded) {
@@ -1258,7 +1272,7 @@
           }
         }
         // Tuck pose: hips flex forward (knees to belly), knees fold shins back
-        const t = Math.min(1, flipAngle / 0.6) * Math.min(1, (Math.PI * 2 - flipAngle) / 0.6);
+        const t = Math.min(1, flipAngle / 0.6) * Math.min(1, (flipTargetAngle - flipAngle) / 0.6);
         const tuck = Math.max(0.15, t);
         legL.rotation.x = -1.8 * tuck;
         legR.rotation.x = -1.8 * tuck;
