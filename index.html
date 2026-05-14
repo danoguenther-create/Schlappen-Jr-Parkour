@@ -39,21 +39,37 @@
       background-clip: text;
       color: transparent;
     }
+    .inv {
+      position: absolute; top: 50px;
+      color: #fff; font-size: 14px; font-weight: bold;
+      pointer-events: none; user-select: none;
+      background: rgba(0,0,0,0.45); padding: 4px 10px; border-radius: 6px;
+      display: flex; align-items: center; gap: 6px;
+    }
+    .inv .dot {
+      display: inline-block; width: 14px; height: 14px; border-radius: 50%;
+      background: #d4e02a; border: 1px solid #6b8a00;
+      box-shadow: inset -2px -2px 2px rgba(0,0,0,0.25);
+    }
+    #inv1 { left: 14px; }
+    #inv2 { left: calc(50% + 14px); }
   </style>
 </head>
 <body>
   <div id="info">
     <b>Schlappen Jr. Parkour - Local Split-Screen</b><br>
-    <b>P1 (links):</b> WS = vor/zurück &nbsp; AD = drehen &nbsp; Shift = Sprinten &nbsp; Space = Springen<br>
-    <b>P2 (rechts):</b> ↑↓ = vor/zurück &nbsp; ←→ = drehen &nbsp; M = Sprinten &nbsp; Enter = Springen<br>
+    <b>P1 (links):</b> WS = vor/zurück &nbsp; AD = drehen &nbsp; Shift = Sprint &nbsp; Space = Sprung &nbsp; Q = Ball werfen<br>
+    <b>P2 (rechts):</b> ↑↓ = vor/zurück &nbsp; ←→ = drehen &nbsp; M = Sprint &nbsp; Enter = Sprung &nbsp; - = Ball werfen<br>
     In der Luft: vor = Frontflip &nbsp; zurück = Backflip &nbsp; links/rechts = Sideflip<br>
     Doppel-Tap der Richtung am Boden = Dive Roll &nbsp; in der Luft = Double Flip<br>
     An Kante: vor = Hochziehen &nbsp; Springen/zurück = Loslassen &nbsp; R = Reset
   </div>
-  <div id="version">build 2026-05-13 #no-boost</div>
+  <div id="version">build 2026-05-13 #balls</div>
   <div id="splitDivider"></div>
   <div id="hearts1" class="hearts"></div>
   <div id="hearts2" class="hearts"></div>
+  <div id="inv1" class="inv"><span class="dot"></span><span id="inv1n">0</span> / 10</div>
+  <div id="inv2" class="inv"><span class="dot"></span><span id="inv2n">0</span> / 10</div>
 
   <script type="importmap">
   {
@@ -871,6 +887,8 @@
         airbornePeakY: spawn.y,
         wasOnGround: false,
         flippedThisAirborne: false,
+        balls: 0,
+        throwCooldown: 0,
         heartsEl: document.getElementById(heartsElId),
         group, bodyGroup, armL, armR, legL, legR,
         camera,
@@ -880,9 +898,11 @@
     const players = [
       createPlayer(new THREE.Vector3(-1.5, 2, 0), 0x1f6fc8, {
         jump: 'Space', fwd: 'KeyW', back: 'KeyS', left: 'KeyA', right: 'KeyD', sprint: 'ShiftLeft',
+        throw: 'KeyQ', invEl: 'inv1n',
       }, 'hearts1'),
       createPlayer(new THREE.Vector3(1.5, 2, 0),  0xc83a3a, {
         jump: 'Enter', fwd: 'ArrowUp', back: 'ArrowDown', left: 'ArrowLeft', right: 'ArrowRight', sprint: 'KeyM',
+        throw: 'Minus', invEl: 'inv2n',
       }, 'hearts2'),
     ];
 
@@ -934,10 +954,186 @@
       p.bodyGroup.rotation.z = 0;
       p.state = 'normal';
       p.yaw = Math.PI;
+      p.balls = 0;
+      p.throwCooldown = 0;
       renderHearts(p);
+      if (typeof renderInventory === 'function') renderInventory(p);
     }
 
     players.forEach(renderHearts);
+
+    // ---------- Tennis balls: inventory, pickups, projectiles ----------
+    const MAX_BALLS = 10;
+    const BALL_RADIUS = 0.12;
+    const BALL_SPEED = 32;
+    const BALL_LIFETIME = 4.0;
+    const THROW_COOLDOWN = 0.3;
+    const PICKUP_RADIUS = 1.0;
+    const HIT_RADIUS = 0.55;
+
+    const ballGeo = new THREE.SphereGeometry(BALL_RADIUS, 12, 10);
+    const ballMat = new THREE.MeshStandardMaterial({ color: 0xd4e02a, roughness: 0.8, emissive: 0x222200, emissiveIntensity: 0.1 });
+
+    function makeBallMesh() {
+      const m = new THREE.Mesh(ballGeo, ballMat);
+      m.castShadow = true;
+      return m;
+    }
+
+    function renderInventory(p) {
+      const el = document.getElementById(p.keys.invEl);
+      if (el) el.textContent = p.balls;
+    }
+    players.forEach(renderInventory);
+
+    // Spawn ball pickups on top of every climbable collider, scaled by height.
+    // count = clamp(1, 10, floor(top.y / 4) + 1) so y=0 -> 1, y=4 -> 2, ..., y>=36 -> 10.
+    const pickups = [];
+    function addPickupCluster(cx, topY, cz, count) {
+      const baseY = topY + BALL_RADIUS + 0.02;
+      for (let i = 0; i < count; i++) {
+        // Stack in a small triangle: max 4 per row, slightly raised
+        const row = Math.floor(i / 4);
+        const colInRow = i % 4;
+        const inRowCount = Math.min(4, count - row * 4);
+        const offsetX = (colInRow - (inRowCount - 1) / 2) * (BALL_RADIUS * 2.1);
+        const offsetZ = (row % 2 === 0 ? 0 : BALL_RADIUS * 0.8);
+        const y = baseY + row * (BALL_RADIUS * 1.8);
+        const mesh = makeBallMesh();
+        mesh.position.set(cx + offsetX, y, cz + offsetZ);
+        scene.add(mesh);
+        pickups.push({ mesh, taken: false });
+      }
+    }
+
+    {
+      // colliders[0] is the ground (huge flat plane) — skip it; iterate the rest.
+      for (let i = 1; i < colliders.length; i++) {
+        const c = colliders[i];
+        const w = c.max.x - c.min.x;
+        const d = c.max.z - c.min.z;
+        // Skip tiny top faces (lamp posts, fence-like, thin walls, balance beams)
+        if (w < 1.6 || d < 1.6) continue;
+        const cx = (c.min.x + c.max.x) / 2;
+        const cz = (c.min.z + c.max.z) / 2;
+        const topY = c.max.y;
+        const count = Math.max(1, Math.min(MAX_BALLS, Math.floor(topY / 4) + 1));
+        addPickupCluster(cx, topY, cz, count);
+      }
+    }
+
+    const balls = []; // live projectiles
+
+    function throwBall(p) {
+      if (p.balls <= 0 || p.throwCooldown > 0) return;
+      if (p.state !== 'normal') return;
+      p.balls -= 1;
+      p.throwCooldown = THROW_COOLDOWN;
+      renderInventory(p);
+
+      const origin = new THREE.Vector3(p.pos.x, p.pos.y + 1.3, p.pos.z);
+      const fx = Math.sin(p.yaw);
+      const fz = Math.cos(p.yaw);
+
+      // Auto vertical aim at the other player at the moment the ball would
+      // have travelled the horizontal distance to them, assuming bullet speed.
+      const other = players.find(x => x !== p);
+      let vy = 0;
+      if (other) {
+        const otherChest = new THREE.Vector3(other.pos.x, other.pos.y + 1.3, other.pos.z);
+        const dx = otherChest.x - origin.x;
+        const dz = otherChest.z - origin.z;
+        const horizDist = Math.hypot(dx, dz);
+        if (horizDist > 0.2) {
+          const t = horizDist / BALL_SPEED;
+          vy = (otherChest.y - origin.y) / t;
+        }
+      }
+
+      // Push origin slightly forward so the thrower can't hit themselves
+      origin.x += fx * (PLAYER_RADIUS + 0.2);
+      origin.z += fz * (PLAYER_RADIUS + 0.2);
+
+      const mesh = makeBallMesh();
+      mesh.position.copy(origin);
+      scene.add(mesh);
+      balls.push({
+        mesh,
+        pos: origin.clone(),
+        velocity: new THREE.Vector3(fx * BALL_SPEED, vy, fz * BALL_SPEED),
+        age: 0,
+        thrower: p,
+      });
+    }
+
+    function updatePickups() {
+      for (const pu of pickups) {
+        if (pu.taken) continue;
+        for (const p of players) {
+          if (p.balls >= MAX_BALLS) continue;
+          const dx = p.pos.x - pu.mesh.position.x;
+          const dy = (p.pos.y + 1.0) - pu.mesh.position.y;
+          const dz = p.pos.z - pu.mesh.position.z;
+          if (dx*dx + dy*dy + dz*dz < PICKUP_RADIUS * PICKUP_RADIUS) {
+            p.balls = Math.min(MAX_BALLS, p.balls + 1);
+            renderInventory(p);
+            pu.taken = true;
+            scene.remove(pu.mesh);
+            break;
+          }
+        }
+      }
+    }
+
+    function updateBalls(dt) {
+      for (let i = balls.length - 1; i >= 0; i--) {
+        const b = balls[i];
+        b.age += dt;
+        b.pos.x += b.velocity.x * dt;
+        b.pos.y += b.velocity.y * dt;
+        b.pos.z += b.velocity.z * dt;
+        b.mesh.position.copy(b.pos);
+
+        // Hit detection (skip the thrower)
+        let hitPlayer = null;
+        for (const p of players) {
+          if (p === b.thrower) continue;
+          if (p.hearts <= 0) continue;
+          // Use chest height as the player's center
+          const dx = p.pos.x - b.pos.x;
+          const dy = (p.pos.y + 1.0) - b.pos.y;
+          const dz = p.pos.z - b.pos.z;
+          if (dx*dx + dy*dy + dz*dz < HIT_RADIUS * HIT_RADIUS) {
+            hitPlayer = p;
+            break;
+          }
+        }
+
+        // World collision (any static collider)
+        let hitWorld = false;
+        if (!hitPlayer) {
+          for (const c of colliders) {
+            if (b.pos.x > c.min.x && b.pos.x < c.max.x &&
+                b.pos.y > c.min.y && b.pos.y < c.max.y &&
+                b.pos.z > c.min.z && b.pos.z < c.max.z) {
+              hitWorld = true;
+              break;
+            }
+          }
+        }
+
+        if (hitPlayer) {
+          hitPlayer.hearts = Math.max(0, hitPlayer.hearts - 1);
+          renderHearts(hitPlayer);
+          if (hitPlayer.hearts <= 0) respawnPlayer(hitPlayer);
+          scene.remove(b.mesh);
+          balls.splice(i, 1);
+        } else if (hitWorld || b.age >= BALL_LIFETIME) {
+          scene.remove(b.mesh);
+          balls.splice(i, 1);
+        }
+      }
+    }
 
     // ---------- Input ----------
     const keys = {};
@@ -1327,6 +1523,7 @@
         if (e.code === p.keys.back)  { tryAirFlip(p, 'back');  tryDirectionalRoll(p, 'back'); }
         if (e.code === p.keys.left)  { tryAirFlip(p, 'sideL'); tryDirectionalRoll(p, 'left'); }
         if (e.code === p.keys.right) { tryAirFlip(p, 'sideR'); tryDirectionalRoll(p, 'right'); }
+        if (e.code === p.keys.throw) throwBall(p);
       }
       if (e.code === 'KeyR') players.forEach(resetPlayer);
     }, { passive: false });
@@ -1356,7 +1553,12 @@
     function animate(now) {
       const dt = Math.min(0.05, (now - prev) / 1000);
       prev = now;
-      for (const p of players) updatePlayer(p, dt);
+      for (const p of players) {
+        updatePlayer(p, dt);
+        if (p.throwCooldown > 0) p.throwCooldown = Math.max(0, p.throwCooldown - dt);
+      }
+      updatePickups();
+      updateBalls(dt);
       renderSplit();
       requestAnimationFrame(animate);
     }
