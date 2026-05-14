@@ -50,7 +50,7 @@
     Doppel-Tap der Richtung am Boden = Dive Roll &nbsp; in der Luft = Double Flip<br>
     An Kante: vor = Hochziehen &nbsp; Springen/zurück = Loslassen &nbsp; R = Reset
   </div>
-  <div id="version">build 2026-05-13 #hearts</div>
+  <div id="version">build 2026-05-13 #safer-flips</div>
   <div id="splitDivider"></div>
   <div id="hearts1" class="hearts"></div>
   <div id="hearts2" class="hearts"></div>
@@ -953,19 +953,19 @@
       const rz = -Math.sin(p.yaw);
 
       if (type === 'front') {
-        p.velocity.y = JUMP_VEL * 1.25;
+        p.velocity.y = JUMP_VEL * 1.05;
         p.velocity.x = fx * 6;
         p.velocity.z = fz * 6;
       } else if (type === 'back') {
-        p.velocity.y = JUMP_VEL * 1.2;
+        p.velocity.y = JUMP_VEL * 1.0;
         p.velocity.x = -fx * 4;
         p.velocity.z = -fz * 4;
       } else if (type === 'sideL') {
-        p.velocity.y = JUMP_VEL * 1.15;
+        p.velocity.y = JUMP_VEL * 0.95;
         p.velocity.x = -rx * 6;
         p.velocity.z = -rz * 6;
       } else if (type === 'sideR') {
-        p.velocity.y = JUMP_VEL * 1.15;
+        p.velocity.y = JUMP_VEL * 0.95;
         p.velocity.x = rx * 6;
         p.velocity.z = rz * 6;
       } else if (type === 'roll') {
@@ -992,7 +992,7 @@
       if (p.isFlipping) {
         if (p.flipType === type && p.flipTargetAngle < Math.PI * 4 && p.flipAngle < Math.PI * 3) {
           p.flipTargetAngle = Math.PI * 4;
-          p.velocity.y = Math.max(p.velocity.y, 17);
+          p.velocity.y = Math.max(p.velocity.y, 14);
         }
         return;
       }
@@ -1211,11 +1211,12 @@
       moveAxis(p, 'y', p.velocity.y * dt);
 
       // Fall damage: track peak Y while airborne; on landing transition,
-      // apply damage based on the drop distance.
+      // apply damage based on the drop distance. Flips/rolls absorb the
+      // impact so landing mid-trick deals no damage.
       if (p.onGround) {
         if (!p.wasOnGround) {
           const fall = p.airbornePeakY - p.pos.y;
-          applyFallDamage(p, fall);
+          if (!p.isFlipping) applyFallDamage(p, fall);
         }
         p.airbornePeakY = p.pos.y;
       } else {
@@ -1246,7 +1247,8 @@
       const horizSpeed = Math.hypot(p.velocity.x, p.velocity.z);
 
       if (p.isFlipping) {
-        const speed = (p.flipType === 'roll') ? Math.PI * 8 : FLIP_SPEED;
+        const speed = (p.flipType === 'roll') ? Math.PI * 8 :
+                      (p.flipTargetAngle > Math.PI * 3) ? Math.PI * 5 : FLIP_SPEED;
         p.flipAngle += speed * dt;
         const finished = p.flipAngle >= p.flipTargetAngle;
         const earlyLand = p.onGround && p.flipAngle > Math.PI * 0.7 && p.flipType !== 'roll';
