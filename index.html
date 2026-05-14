@@ -22,6 +22,23 @@
       position: absolute; top: 0; left: 50%; width: 2px; height: 100%;
       background: rgba(0,0,0,0.6); pointer-events: none;
     }
+    .hearts {
+      position: absolute; top: 10px;
+      font-size: 30px; line-height: 1; letter-spacing: 3px;
+      pointer-events: none; user-select: none;
+      filter: drop-shadow(0 0 4px rgba(0,0,0,0.7));
+    }
+    #hearts1 { left: 14px; }
+    #hearts2 { left: calc(50% + 14px); }
+    .heart { font-family: 'Segoe UI Symbol', sans-serif; }
+    .heart.full { color: #ff2030; }
+    .heart.empty { color: #222; opacity: 0.7; }
+    .heart.half {
+      background: linear-gradient(to right, #ff2030 50%, #222 50%);
+      -webkit-background-clip: text;
+      background-clip: text;
+      color: transparent;
+    }
   </style>
 </head>
 <body>
@@ -33,8 +50,10 @@
     Doppel-Tap der Richtung am Boden = Dive Roll &nbsp; in der Luft = Double Flip<br>
     An Kante: vor = Hochziehen &nbsp; Springen/zurück = Loslassen &nbsp; R = Reset
   </div>
-  <div id="version">build 2026-05-13 #sideflip-fix4</div>
+  <div id="version">build 2026-05-13 #hearts</div>
   <div id="splitDivider"></div>
+  <div id="hearts1" class="hearts"></div>
+  <div id="hearts2" class="hearts"></div>
 
   <script type="importmap">
   {
@@ -723,7 +742,7 @@
     const mouthMat  = new THREE.MeshStandardMaterial({ color: 0x5a2a22, roughness: 0.6 });
 
     // ---------- Player factory ----------
-    function createPlayer(spawn, shirtColor, keyMap) {
+    function createPlayer(spawn, shirtColor, keyMap, heartsElId) {
       const group = new THREE.Group();
       const bodyGroup = new THREE.Group();
       bodyGroup.position.y = FLIP_PIVOT_Y;
@@ -848,6 +867,10 @@
         climbTarget: new THREE.Vector3(),
         lastTap: { fwd: -10, back: -10, left: -10, right: -10 },
         keys: keyMap,
+        hearts: 6,
+        airbornePeakY: spawn.y,
+        wasOnGround: false,
+        heartsEl: document.getElementById(heartsElId),
         group, bodyGroup, armL, armR, legL, legR,
         camera,
       };
@@ -856,11 +879,63 @@
     const players = [
       createPlayer(new THREE.Vector3(-1.5, 2, 0), 0x1f6fc8, {
         jump: 'Space', fwd: 'KeyW', back: 'KeyS', left: 'KeyA', right: 'KeyD', sprint: 'ShiftLeft',
-      }),
+      }, 'hearts1'),
       createPlayer(new THREE.Vector3(1.5, 2, 0),  0xc83a3a, {
         jump: 'Enter', fwd: 'ArrowUp', back: 'ArrowDown', left: 'ArrowLeft', right: 'ArrowRight', sprint: 'KeyM',
-      }),
+      }, 'hearts2'),
     ];
+
+    // ---------- Health / fall damage ----------
+    function fallDamage(d) {
+      if (d < 4)  return 0;
+      if (d < 6)  return 0.5;
+      if (d < 8)  return 1;
+      if (d < 10) return 1.5;
+      if (d < 13) return 2;
+      if (d < 16) return 3;
+      if (d < 19) return 4;
+      if (d < 23) return 5;
+      return 6;
+    }
+
+    function renderHearts(p) {
+      if (!p.heartsEl) return;
+      let html = '';
+      for (let i = 0; i < 6; i++) {
+        let cls;
+        if (p.hearts >= i + 1) cls = 'full';
+        else if (p.hearts >= i + 0.5) cls = 'half';
+        else cls = 'empty';
+        html += '<span class="heart ' + cls + '">♥</span>';
+      }
+      p.heartsEl.innerHTML = html;
+    }
+
+    function applyFallDamage(p, dist) {
+      const dmg = fallDamage(dist);
+      if (dmg <= 0) return;
+      p.hearts = Math.max(0, p.hearts - dmg);
+      renderHearts(p);
+      if (p.hearts <= 0) respawnPlayer(p);
+    }
+
+    function respawnPlayer(p) {
+      p.pos.copy(p.spawn);
+      p.velocity.set(0, 0, 0);
+      p.hearts = 6;
+      p.airbornePeakY = p.spawn.y;
+      p.wasOnGround = false;
+      p.isFlipping = false;
+      p.flipAngle = 0;
+      p.flipType = null;
+      p.bodyGroup.rotation.x = 0;
+      p.bodyGroup.rotation.z = 0;
+      p.state = 'normal';
+      p.yaw = Math.PI;
+      renderHearts(p);
+    }
+
+    players.forEach(renderHearts);
 
     // ---------- Input ----------
     const keys = {};
@@ -1041,6 +1116,9 @@
       p.state = 'normal';
       p.hangCollider = null;
       p.velocity.set(0, -2, 0);
+      // Reset fall tracking so the brief letting-go doesn't add fake fall height
+      p.airbornePeakY = p.pos.y;
+      p.wasOnGround = false;
     }
 
     function setHangingPose(p) {
@@ -1088,6 +1166,9 @@
         if (p.climbT >= CLIMB_DURATION) {
           p.state = 'normal';
           p.velocity.set(0, 0, 0);
+          // Climbed up onto the ledge: no fall damage on next step
+          p.airbornePeakY = p.pos.y;
+          p.wasOnGround = true;
         }
         p.group.position.copy(p.pos);
         p.group.rotation.y = p.yaw;
@@ -1129,9 +1210,23 @@
       moveAxis(p, 'z', p.velocity.z * dt);
       moveAxis(p, 'y', p.velocity.y * dt);
 
+      // Fall damage: track peak Y while airborne; on landing transition,
+      // apply damage based on the drop distance.
+      if (p.onGround) {
+        if (!p.wasOnGround) {
+          const fall = p.airbornePeakY - p.pos.y;
+          applyFallDamage(p, fall);
+        }
+        p.airbornePeakY = p.pos.y;
+      } else {
+        if (p.wasOnGround) p.airbornePeakY = p.pos.y;
+        else p.airbornePeakY = Math.max(p.airbornePeakY, p.pos.y);
+      }
+      p.wasOnGround = p.onGround;
+
       if (p.pos.y < -20) {
-        p.pos.copy(p.spawn);
-        p.velocity.set(0, 0, 0);
+        // Void fall = instant death + full respawn
+        respawnPlayer(p);
       }
 
       if (!p.onGround && !p.isFlipping) {
@@ -1206,15 +1301,7 @@
     }
 
     function resetPlayer(p) {
-      p.pos.copy(p.spawn);
-      p.velocity.set(0, 0, 0);
-      p.isFlipping = false;
-      p.flipAngle = 0;
-      p.flipType = null;
-      p.bodyGroup.rotation.x = 0;
-      p.bodyGroup.rotation.z = 0;
-      p.state = 'normal';
-      p.yaw = Math.PI;
+      respawnPlayer(p);
     }
 
     window.addEventListener('keydown', (e) => {
