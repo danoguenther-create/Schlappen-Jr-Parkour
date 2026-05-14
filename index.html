@@ -9,9 +9,18 @@
   <style>
     html, body { margin: 0; padding: 0; overflow: hidden; background: #87CEEB; font-family: sans-serif; }
     #info {
-      position: absolute; top: 10px; left: 10px; color: #fff;
-      background: rgba(0,0,0,0.5); padding: 8px 12px; border-radius: 6px;
-      font-size: 13px; line-height: 1.4; user-select: none; pointer-events: none;
+      position: absolute; top: 10px; left: 50%; transform: translateX(-50%);
+      color: #fff; background: rgba(0,0,0,0.7); padding: 10px 14px;
+      border-radius: 8px; font-size: 12px; line-height: 1.5;
+      user-select: none; pointer-events: none;
+      max-width: 720px; display: none;
+    }
+    #info.visible { display: block; }
+    #hint {
+      position: absolute; top: 10px; left: 50%; transform: translateX(-50%);
+      color: rgba(255,255,255,0.85); background: rgba(0,0,0,0.45);
+      padding: 3px 10px; border-radius: 6px; font-size: 11px;
+      font-family: monospace; pointer-events: none; user-select: none;
     }
     #version {
       position: absolute; bottom: 8px; right: 10px; color: rgba(255,255,255,0.85);
@@ -65,7 +74,8 @@
     An Wand mit vor = Wallrun &nbsp; Bälle aufheben durch Berühren<br>
     An Kante: vor = Hochziehen &nbsp; Springen/zurück = Loslassen &nbsp; R = Reset
   </div>
-  <div id="version">build 2026-05-13 #wallrun-aim</div>
+  <div id="hint">H = Steuerung anzeigen</div>
+  <div id="version">build 2026-05-13 #hint-hearts-wallkick</div>
   <div id="splitDivider"></div>
   <div id="hearts1" class="hearts"></div>
   <div id="hearts2" class="hearts"></div>
@@ -984,6 +994,19 @@
       return m;
     }
 
+    const heartPickupGeo = new THREE.IcosahedronGeometry(0.22, 0);
+    const heartPickupMat = new THREE.MeshStandardMaterial({
+      color: 0xff2030, emissive: 0xff1020, emissiveIntensity: 0.6, roughness: 0.4,
+    });
+    function makeHeartPickupMesh() {
+      const m = new THREE.Mesh(heartPickupGeo, heartPickupMat);
+      m.castShadow = true;
+      return m;
+    }
+    const heartPickups = [];
+    const HEART_RESPAWN_DELAY = 25.0;
+    const HEART_MIN_HEIGHT = 12;
+
     function renderInventory(p) {
       const el = document.getElementById(p.keys.invEl);
       if (el) el.textContent = p.balls;
@@ -1030,6 +1053,17 @@
         if (w >= 6 && d >= 6) {
           addPickupCluster(c.min.x + 1.2, topY, c.min.z + 1.2, Math.max(1, count - 2));
           addPickupCluster(c.max.x - 1.2, topY, c.max.z - 1.2, Math.max(1, count - 2));
+        }
+
+        // Rare heart pickup on high platforms (scarcer than balls)
+        if (topY >= HEART_MIN_HEIGHT && Math.random() < 0.35) {
+          const mesh = makeHeartPickupMesh();
+          const hx = cx + (Math.random() - 0.5) * Math.min(w * 0.5, 1.5);
+          const hz = cz + (Math.random() - 0.5) * Math.min(d * 0.5, 1.5);
+          const home = new THREE.Vector3(hx, topY + 0.6, hz);
+          mesh.position.copy(home);
+          scene.add(mesh);
+          heartPickups.push({ mesh, home, taken: false, respawnAt: 0 });
         }
       }
       // Scattered ground pickups in the park-side area (one ball each)
@@ -1119,6 +1153,36 @@
             renderInventory(p);
             pu.taken = true;
             pu.respawnAt = t + PICKUP_RESPAWN_DELAY;
+            scene.remove(pu.mesh);
+            break;
+          }
+        }
+      }
+    }
+
+    function updateHeartPickups(t, dt) {
+      for (const pu of heartPickups) {
+        if (pu.taken) {
+          if (t >= pu.respawnAt) {
+            pu.taken = false;
+            pu.mesh.position.copy(pu.home);
+            scene.add(pu.mesh);
+          }
+          continue;
+        }
+        // Hover + spin so they're visible
+        pu.mesh.rotation.y = t * 1.8;
+        pu.mesh.position.y = pu.home.y + Math.sin(t * 2.5) * 0.12;
+        for (const p of players) {
+          if (p.hearts >= 6) continue;
+          const dx = p.pos.x - pu.mesh.position.x;
+          const dy = (p.pos.y + 1.0) - pu.mesh.position.y;
+          const dz = p.pos.z - pu.mesh.position.z;
+          if (dx*dx + dy*dy + dz*dz < PICKUP_RADIUS * PICKUP_RADIUS) {
+            p.hearts = Math.min(6, p.hearts + 1);
+            renderHearts(p);
+            pu.taken = true;
+            pu.respawnAt = t + HEART_RESPAWN_DELAY;
             scene.remove(pu.mesh);
             break;
           }
@@ -1411,8 +1475,9 @@
         if (probeZ < c.min.z || probeZ > c.max.z) continue;
         const wallTop = c.max.y;
         const above = wallTop - p.pos.y;
-        if (above < 1.2) continue;             // wall too short
-        if (above > MAX_WALLRUN_HEIGHT) continue; // wall too tall to scale
+        if (above < 1.2) continue; // wall too short
+        // Even very tall walls let you try: the duration cap will make you
+        // run out of stamina before the top, and you can also jump off.
         p.state = 'wallrun';
         p.wallrunCollider = c;
         p.wallrunT = 0;
@@ -1660,6 +1725,16 @@
           continue;
         }
         if (p.state === 'climbing') continue;
+        if (p.state === 'wallrun' && e.code === p.keys.jump) {
+          // Kick off the wall: small upward + push back away from the wall
+          p.state = 'normal';
+          p.wallrunCollider = null;
+          p.velocity.y = JUMP_VEL * 0.8;
+          p.velocity.x = -Math.sin(p.yaw) * 7;
+          p.velocity.z = -Math.cos(p.yaw) * 7;
+          p.flippedThisAirborne = true;
+          continue;
+        }
         if (e.code === p.keys.jump) tryJump(p);
         if (e.code === p.keys.fwd)   { tryAirFlip(p, 'front'); tryDirectionalRoll(p, 'fwd'); }
         if (e.code === p.keys.back)  { tryAirFlip(p, 'back');  tryDirectionalRoll(p, 'back'); }
@@ -1668,6 +1743,12 @@
         if (e.code === p.keys.throw) throwBall(p);
       }
       if (e.code === 'KeyR') players.forEach(resetPlayer);
+      if (e.code === 'KeyH') {
+        const info = document.getElementById('info');
+        const hint = document.getElementById('hint');
+        const visible = info.classList.toggle('visible');
+        if (hint) hint.style.display = visible ? 'none' : '';
+      }
     }, { passive: false });
     window.addEventListener('keyup', (e) => { keys[e.code] = false; });
 
@@ -1700,6 +1781,7 @@
         if (p.throwCooldown > 0) p.throwCooldown = Math.max(0, p.throwCooldown - dt);
       }
       updatePickups(now / 1000);
+      updateHeartPickups(now / 1000, dt);
       updateBalls(dt);
       renderSplit();
       requestAnimationFrame(animate);
