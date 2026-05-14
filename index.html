@@ -50,7 +50,7 @@
     Doppel-Tap der Richtung am Boden = Dive Roll &nbsp; in der Luft = Double Flip<br>
     An Kante: vor = Hochziehen &nbsp; Springen/zurück = Loslassen &nbsp; R = Reset
   </div>
-  <div id="version">build 2026-05-13 #safer-flips</div>
+  <div id="version">build 2026-05-13 #no-boost</div>
   <div id="splitDivider"></div>
   <div id="hearts1" class="hearts"></div>
   <div id="hearts2" class="hearts"></div>
@@ -870,6 +870,7 @@
         hearts: 6,
         airbornePeakY: spawn.y,
         wasOnGround: false,
+        flippedThisAirborne: false,
         heartsEl: document.getElementById(heartsElId),
         group, bodyGroup, armL, armR, legL, legR,
         camera,
@@ -925,6 +926,7 @@
       p.hearts = 6;
       p.airbornePeakY = p.spawn.y;
       p.wasOnGround = false;
+      p.flippedThisAirborne = false;
       p.isFlipping = false;
       p.flipAngle = 0;
       p.flipType = null;
@@ -946,26 +948,25 @@
       p.flipAngle = 0;
       p.flipTargetAngle = Math.PI * 2;
       p.onGround = false;
+      p.flippedThisAirborne = true;
 
       const fx = Math.sin(p.yaw);
       const fz = Math.cos(p.yaw);
       const rx = Math.cos(p.yaw);
       const rz = -Math.sin(p.yaw);
 
+      // Air flips no longer boost y velocity: the player has only the
+      // height they already gained from the normal jump.
       if (type === 'front') {
-        p.velocity.y = JUMP_VEL * 1.05;
         p.velocity.x = fx * 6;
         p.velocity.z = fz * 6;
       } else if (type === 'back') {
-        p.velocity.y = JUMP_VEL * 1.0;
         p.velocity.x = -fx * 4;
         p.velocity.z = -fz * 4;
       } else if (type === 'sideL') {
-        p.velocity.y = JUMP_VEL * 0.95;
         p.velocity.x = -rx * 6;
         p.velocity.z = -rz * 6;
       } else if (type === 'sideR') {
-        p.velocity.y = JUMP_VEL * 0.95;
         p.velocity.x = rx * 6;
         p.velocity.z = rz * 6;
       } else if (type === 'roll') {
@@ -992,7 +993,8 @@
       if (p.isFlipping) {
         if (p.flipType === type && p.flipTargetAngle < Math.PI * 4 && p.flipAngle < Math.PI * 3) {
           p.flipTargetAngle = Math.PI * 4;
-          p.velocity.y = Math.max(p.velocity.y, 14);
+          // Mark this airborne stint as "flipped" so the landing is forgiven
+          p.flippedThisAirborne = true;
         }
         return;
       }
@@ -1211,12 +1213,13 @@
       moveAxis(p, 'y', p.velocity.y * dt);
 
       // Fall damage: track peak Y while airborne; on landing transition,
-      // apply damage based on the drop distance. Flips/rolls absorb the
-      // impact so landing mid-trick deals no damage.
+      // apply damage based on the drop distance. Any flip/roll done
+      // during the airborne stint absorbs the impact entirely.
       if (p.onGround) {
         if (!p.wasOnGround) {
           const fall = p.airbornePeakY - p.pos.y;
-          if (!p.isFlipping) applyFallDamage(p, fall);
+          if (!p.isFlipping && !p.flippedThisAirborne) applyFallDamage(p, fall);
+          p.flippedThisAirborne = false;
         }
         p.airbornePeakY = p.pos.y;
       } else {
