@@ -67,15 +67,16 @@
 <body>
   <div id="info">
     <b>Schlappen Jr. Parkour - Local Split-Screen</b><br>
-    <b>P1 (links):</b> WS = vor/zurück &nbsp; AD = drehen &nbsp; Shift = Sprint &nbsp; Space = Sprung &nbsp; Q = Ball werfen<br>
-    <b>P2 (rechts):</b> ↑↓ = vor/zurück &nbsp; ←→ = drehen &nbsp; M = Sprint &nbsp; Enter = Sprung &nbsp; - = Ball werfen<br>
+    <b>P1:</b> WS=vor/zurück, AD=drehen, Shift=Sprint, Space=Sprung, Q=Werfen, E=Rakete<br>
+    <b>P2:</b> ↑↓=vor/zurück, ←→=drehen, M=Sprint, Enter=Sprung, -=Werfen, .=Rakete<br>
+    Waffen-Pickups: Pistole 🔫, Scharfschütze 🎯, Rakete 🚀 (homing)<br>
     In der Luft: vor = Frontflip &nbsp; zurück = Backflip &nbsp; links/rechts = Sideflip<br>
     Doppel-Tap der Richtung am Boden = Dive Roll &nbsp; in der Luft = Double Flip<br>
     An Wand mit vor = Wallrun &nbsp; Bälle aufheben durch Berühren<br>
     An Kante: vor = Hochziehen &nbsp; Springen/zurück = Loslassen &nbsp; R = Reset
   </div>
   <div id="hint">H = Steuerung anzeigen</div>
-  <div id="version">build 2026-05-13 #pistol</div>
+  <div id="version">build 2026-05-13 #weapons</div>
   <div id="splitDivider"></div>
   <div id="hearts1" class="hearts"></div>
   <div id="hearts2" class="hearts"></div>
@@ -869,6 +870,42 @@
       }
       const legL = makeLeg('L');
       const legR = makeLeg('R');
+
+      // Held weapons (children of the right-arm group). Hidden until equipped.
+      const gunMat = new THREE.MeshStandardMaterial({ color: 0x1f2128, roughness: 0.45, metalness: 0.55 });
+      const heldPistol = new THREE.Group();
+      {
+        const body = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.09, 0.18), gunMat);
+        body.castShadow = true;
+        const barrel = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.04, 0.13), gunMat);
+        barrel.position.set(0, 0.02, 0.13);
+        barrel.castShadow = true;
+        heldPistol.add(body, barrel);
+      }
+      heldPistol.position.set(0.0, -0.85, 0.18);
+      heldPistol.visible = false;
+      armR.add(heldPistol);
+
+      const heldSniper = new THREE.Group();
+      {
+        const body = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.09, 0.65), gunMat);
+        body.castShadow = true;
+        const barrel = new THREE.Mesh(new THREE.BoxGeometry(0.035, 0.035, 0.55), gunMat);
+        barrel.position.set(0, 0.045, 0.55);
+        barrel.castShadow = true;
+        const scope = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, 0.14, 8), gunMat);
+        scope.rotation.x = Math.PI / 2;
+        scope.position.set(0, 0.085, 0.05);
+        scope.castShadow = true;
+        const stock = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.09, 0.18), gunMat);
+        stock.position.set(0, 0, -0.32);
+        stock.castShadow = true;
+        heldSniper.add(body, barrel, scope, stock);
+      }
+      heldSniper.position.set(0.0, -0.85, 0.32);
+      heldSniper.visible = false;
+      armR.add(heldSniper);
+
       scene.add(group);
 
       const camera = new THREE.PerspectiveCamera(70, 1, 0.1, 1000);
@@ -899,10 +936,12 @@
         wasOnGround: false,
         flippedThisAirborne: false,
         balls: 0,
-        pistol: false,
+        weapon: 'hand',     // 'hand' | 'pistol' | 'sniper'
+        missiles: 0,
         throwCooldown: 0,
         heartsEl: document.getElementById(heartsElId),
         group, bodyGroup, armL, armR, legL, legR,
+        heldPistol, heldSniper,
         camera,
       };
     }
@@ -910,11 +949,11 @@
     const players = [
       createPlayer(new THREE.Vector3(-1.5, 2, 0), 0x1f6fc8, {
         jump: 'Space', fwd: 'KeyW', back: 'KeyS', left: 'KeyA', right: 'KeyD', sprint: 'ShiftLeft',
-        throw: 'KeyQ', invEl: 'inv1',
+        throw: 'KeyQ', missile: 'KeyE', invEl: 'inv1',
       }, 'hearts1'),
       createPlayer(new THREE.Vector3(1.5, 2, 0),  0xc83a3a, {
         jump: 'Enter', fwd: 'ArrowUp', back: 'ArrowDown', left: 'ArrowLeft', right: 'ArrowRight', sprint: 'KeyM',
-        throw: 'Minus', invEl: 'inv2',
+        throw: 'Minus', missile: 'Period', invEl: 'inv2',
       }, 'hearts2'),
     ];
 
@@ -967,8 +1006,10 @@
       p.state = 'normal';
       p.yaw = Math.PI;
       p.balls = 0;
-      p.pistol = false;
+      p.weapon = 'hand';
+      p.missiles = 0;
       p.throwCooldown = 0;
+      updateWeaponVisuals(p);
       p.wallrunCollider = null;
       p.wallrunT = 0;
       renderHearts(p);
@@ -982,10 +1023,15 @@
     const BALL_RADIUS = 0.12;
     const HAND_BALL_SPEED = 26;
     const PISTOL_BALL_SPEED = 60;
-    const HAND_BALL_LIFETIME = 2.2;   // limits hand-thrown range, plus gravity drops them
-    const PISTOL_BALL_LIFETIME = 12;  // bullet-style: very long range, no gravity
+    const SNIPER_BALL_SPEED = 110;
+    const HAND_BALL_LIFETIME = 2.2;
+    const PISTOL_BALL_LIFETIME = 12;
+    const SNIPER_BALL_LIFETIME = 14;
     const HAND_THROW_COOLDOWN = 0.3;
     const PISTOL_COOLDOWN = 0.18;
+    const SNIPER_COOLDOWN = 1.0;
+    const MISSILE_COOLDOWN = 0.6;
+    const MAX_MISSILES = 2;
     const PICKUP_RADIUS = 1.0;
     const HIT_RADIUS = 0.85;
     const AIM_ASSIST_CONE = 0.45; // dot threshold (~63 degrees)
@@ -1012,48 +1058,105 @@
     const HEART_RESPAWN_DELAY = 25.0;
     const HEART_MIN_HEIGHT = 12;
 
-    // ---------- Pistol pickup ----------
-    const pistolPickups = [];
-    const PISTOL_RESPAWN_DELAY = 45.0;
+    // ---------- Weapon pickups ----------
+    const weaponPickups = [];
+    const WEAPON_RESPAWN_DELAY = 45.0;
+    const gunPickupMat = new THREE.MeshStandardMaterial({ color: 0x1f2128, roughness: 0.45, metalness: 0.55 });
     function makePistolMesh() {
       const g = new THREE.Group();
-      const dark = new THREE.MeshStandardMaterial({ color: 0x1f2128, roughness: 0.45, metalness: 0.55 });
-      const body = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.1, 0.22), dark);
+      const body = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.1, 0.22), gunPickupMat);
       body.castShadow = true;
       g.add(body);
-      const grip = new THREE.Mesh(new THREE.BoxGeometry(0.065, 0.13, 0.08), dark);
+      const grip = new THREE.Mesh(new THREE.BoxGeometry(0.065, 0.13, 0.08), gunPickupMat);
       grip.position.set(0, -0.1, -0.07);
       grip.rotation.x = -0.25;
       grip.castShadow = true;
       g.add(grip);
-      const barrel = new THREE.Mesh(new THREE.BoxGeometry(0.045, 0.045, 0.16), dark);
+      const barrel = new THREE.Mesh(new THREE.BoxGeometry(0.045, 0.045, 0.16), gunPickupMat);
       barrel.position.set(0, 0.025, 0.18);
       barrel.castShadow = true;
       g.add(barrel);
       return g;
     }
-    function addPistolPickupAt(x, y, z) {
-      const mesh = makePistolMesh();
+    function makeSniperMesh() {
+      const g = new THREE.Group();
+      const body = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.11, 0.7), gunPickupMat);
+      body.castShadow = true;
+      g.add(body);
+      const grip = new THREE.Mesh(new THREE.BoxGeometry(0.065, 0.16, 0.08), gunPickupMat);
+      grip.position.set(0, -0.13, -0.05);
+      grip.rotation.x = -0.2;
+      grip.castShadow = true;
+      g.add(grip);
+      const barrel = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.04, 0.55), gunPickupMat);
+      barrel.position.set(0, 0.04, 0.55);
+      barrel.castShadow = true;
+      g.add(barrel);
+      const scope = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.16, 10), gunPickupMat);
+      scope.rotation.x = Math.PI / 2;
+      scope.position.set(0, 0.1, 0.05);
+      scope.castShadow = true;
+      g.add(scope);
+      return g;
+    }
+    function addWeaponPickupAt(kind, x, y, z) {
+      const mesh = kind === 'sniper' ? makeSniperMesh() : makePistolMesh();
       const home = new THREE.Vector3(x, y, z);
       mesh.position.copy(home);
       scene.add(mesh);
-      pistolPickups.push({ mesh, home, taken: false, respawnAt: 0 });
+      weaponPickups.push({ kind, mesh, home, taken: false, respawnAt: 0 });
     }
-    // Spread a few pistols around high parkour goals
-    addPistolPickupAt(110, 23.5, -90);  // finish tower
-    addPistolPickupAt(170, 42, 170);    // mega spiral tower top
-    addPistolPickupAt(80, 13.2, -120);  // big rooftop arena
-    addPistolPickupAt(-50, 12, 22);     // long rooftop run
-    addPistolPickupAt(85, 12.5, -85);   // floating cloud rings center area
+    addWeaponPickupAt('pistol', 110, 23.5, -90);
+    addWeaponPickupAt('pistol', 80, 13.2, -120);
+    addWeaponPickupAt('pistol', -50, 12, 22);
+    addWeaponPickupAt('sniper', 170, 42, 170);     // mega spiral tower top
+    addWeaponPickupAt('sniper', 85, 12.5, -85);    // cloud-rings area
+    addWeaponPickupAt('sniper', -82, 18, -10);     // long rooftop run end
+
+    // ---------- Missile pickups ----------
+    const missilePickups = [];
+    const MISSILE_RESPAWN_DELAY = 35.0;
+    function makeMissilePickupMesh() {
+      const g = new THREE.Group();
+      const grey = new THREE.MeshStandardMaterial({ color: 0x6a6a72, roughness: 0.5, metalness: 0.3 });
+      const red  = new THREE.MeshStandardMaterial({ color: 0xff3322, roughness: 0.4, emissive: 0x551100, emissiveIntensity: 0.4 });
+      const body = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 0.4, 10), grey);
+      body.rotation.z = Math.PI / 2;
+      body.castShadow = true;
+      g.add(body);
+      const tip = new THREE.Mesh(new THREE.ConeGeometry(0.07, 0.14, 10), red);
+      tip.rotation.z = -Math.PI / 2;
+      tip.position.x = 0.27;
+      tip.castShadow = true;
+      g.add(tip);
+      return g;
+    }
+    function addMissilePickupAt(x, y, z) {
+      const mesh = makeMissilePickupMesh();
+      const home = new THREE.Vector3(x, y, z);
+      mesh.position.copy(home);
+      scene.add(mesh);
+      missilePickups.push({ mesh, home, taken: false, respawnAt: 0 });
+    }
+    addMissilePickupAt(110, 23.8, -85);
+    addMissilePickupAt(170, 42.3, 165);
+    addMissilePickupAt(-30, 7.5, 22);
+    addMissilePickupAt(80, 13.6, -115);
 
     function renderInventory(p) {
       const el = document.getElementById(p.keys.invEl);
       if (!el) return;
       let html = '<span class="dot"></span>' + p.balls + ' / 10';
-      if (p.pistol) html += ' <span class="pistol">🔫</span>';
+      if (p.missiles > 0) html += ' &nbsp; <span style="color:#ff8366">🚀</span> ' + p.missiles;
+      if (p.weapon === 'pistol') html += ' 🔫';
+      else if (p.weapon === 'sniper') html += ' 🎯';
       el.innerHTML = html;
     }
-    players.forEach(renderInventory);
+    function updateWeaponVisuals(p) {
+      p.heldPistol.visible = p.weapon === 'pistol';
+      p.heldSniper.visible = p.weapon === 'sniper';
+    }
+    players.forEach(p => { renderInventory(p); updateWeaponVisuals(p); });
 
     // Spawn ball pickups on top of every climbable collider, scaled by height.
     // count = clamp(1, 10, floor(top.y / 4) + 1) so y=0 -> 1, y=4 -> 2, ..., y>=36 -> 10.
@@ -1125,12 +1228,21 @@
     function throwBall(p) {
       if (p.balls <= 0 || p.throwCooldown > 0) return;
       if (p.state !== 'normal') return;
-      const isPistol = p.pistol;
-      const speed = isPistol ? PISTOL_BALL_SPEED : HAND_BALL_SPEED;
-      const lifetime = isPistol ? PISTOL_BALL_LIFETIME : HAND_BALL_LIFETIME;
-      const useGravity = !isPistol;
+
+      // Resolve weapon parameters
+      let speed, lifetime, useGravity, cooldown, damage;
+      if (p.weapon === 'pistol') {
+        speed = PISTOL_BALL_SPEED; lifetime = PISTOL_BALL_LIFETIME;
+        useGravity = false; cooldown = PISTOL_COOLDOWN; damage = 1;
+      } else if (p.weapon === 'sniper') {
+        speed = SNIPER_BALL_SPEED; lifetime = SNIPER_BALL_LIFETIME;
+        useGravity = false; cooldown = SNIPER_COOLDOWN; damage = 2;
+      } else {
+        speed = HAND_BALL_SPEED; lifetime = HAND_BALL_LIFETIME;
+        useGravity = true; cooldown = HAND_THROW_COOLDOWN; damage = 1;
+      }
       p.balls -= 1;
-      p.throwCooldown = isPistol ? PISTOL_COOLDOWN : HAND_THROW_COOLDOWN;
+      p.throwCooldown = cooldown;
       renderInventory(p);
 
       const origin = new THREE.Vector3(p.pos.x, p.pos.y + 1.3, p.pos.z);
@@ -1157,13 +1269,10 @@
             dirX /= len; dirZ /= len;
           }
           const t = horizDist / speed;
-          // For gravity-affected throws, compensate so the ball still lands on
-          // the target despite arcing.
           vy = (otherChest.y - origin.y) / t + (useGravity ? 0.5 * Math.abs(GRAVITY) * t : 0);
         }
       }
 
-      // Push origin slightly forward so the thrower can't hit themselves
       origin.x += dirX * (PLAYER_RADIUS + 0.2);
       origin.z += dirZ * (PLAYER_RADIUS + 0.2);
 
@@ -1178,7 +1287,125 @@
         thrower: p,
         useGravity,
         lifetime,
+        damage,
       });
+    }
+
+    // ---------- Tracking missiles ----------
+    const missiles = [];
+    const MISSILE_SPEED = 24;
+    const MISSILE_TURN_RATE = 2.6; // higher = sharper turning
+    const MISSILE_LIFETIME = 6;
+    const MISSILE_DAMAGE = 2;
+    const MISSILE_HIT_RADIUS = 1.0;
+
+    function makeMissileProjectileMesh() {
+      const g = new THREE.Group();
+      const grey = new THREE.MeshStandardMaterial({ color: 0x707078, roughness: 0.5, metalness: 0.3 });
+      const red  = new THREE.MeshStandardMaterial({ color: 0xff3322, roughness: 0.4, emissive: 0xff2200, emissiveIntensity: 0.5 });
+      const body = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 0.4, 10), grey);
+      body.rotation.x = Math.PI / 2;
+      body.castShadow = true;
+      g.add(body);
+      const tip = new THREE.Mesh(new THREE.ConeGeometry(0.07, 0.14, 10), red);
+      tip.rotation.x = Math.PI / 2;
+      tip.position.z = 0.27;
+      tip.castShadow = true;
+      g.add(tip);
+      return g;
+    }
+
+    function fireMissile(p) {
+      if (p.missiles <= 0 || p.throwCooldown > 0) return;
+      if (p.state !== 'normal') return;
+      p.missiles -= 1;
+      p.throwCooldown = MISSILE_COOLDOWN;
+      renderInventory(p);
+
+      const fx = Math.sin(p.yaw);
+      const fz = Math.cos(p.yaw);
+      const origin = new THREE.Vector3(
+        p.pos.x + fx * (PLAYER_RADIUS + 0.3),
+        p.pos.y + 1.3,
+        p.pos.z + fz * (PLAYER_RADIUS + 0.3)
+      );
+      const mesh = makeMissileProjectileMesh();
+      mesh.position.copy(origin);
+      scene.add(mesh);
+      missiles.push({
+        mesh,
+        pos: origin.clone(),
+        velocity: new THREE.Vector3(fx * MISSILE_SPEED, 0, fz * MISSILE_SPEED),
+        age: 0,
+        thrower: p,
+      });
+    }
+
+    function updateMissiles(dt) {
+      for (let i = missiles.length - 1; i >= 0; i--) {
+        const m = missiles[i];
+        m.age += dt;
+
+        // Steer toward the other player (homing)
+        const target = players.find(x => x !== m.thrower && x.hearts > 0);
+        if (target) {
+          const tx = target.pos.x - m.pos.x;
+          const ty = (target.pos.y + 1.0) - m.pos.y;
+          const tz = target.pos.z - m.pos.z;
+          const tlen = Math.hypot(tx, ty, tz);
+          if (tlen > 0.001) {
+            const tdx = tx / tlen, tdy = ty / tlen, tdz = tz / tlen;
+            const vlen = Math.hypot(m.velocity.x, m.velocity.y, m.velocity.z) || 1;
+            const cdx = m.velocity.x / vlen, cdy = m.velocity.y / vlen, cdz = m.velocity.z / vlen;
+            const blend = Math.min(1, MISSILE_TURN_RATE * dt);
+            let nx = cdx + (tdx - cdx) * blend;
+            let ny = cdy + (tdy - cdy) * blend;
+            let nz = cdz + (tdz - cdz) * blend;
+            const nlen = Math.hypot(nx, ny, nz) || 1;
+            nx /= nlen; ny /= nlen; nz /= nlen;
+            m.velocity.set(nx * MISSILE_SPEED, ny * MISSILE_SPEED, nz * MISSILE_SPEED);
+          }
+        }
+
+        m.pos.x += m.velocity.x * dt;
+        m.pos.y += m.velocity.y * dt;
+        m.pos.z += m.velocity.z * dt;
+        m.mesh.position.copy(m.pos);
+        m.mesh.lookAt(m.pos.x + m.velocity.x, m.pos.y + m.velocity.y, m.pos.z + m.velocity.z);
+
+        let hitPlayer = null;
+        for (const p of players) {
+          if (p === m.thrower) continue;
+          if (p.hearts <= 0) continue;
+          const dx = p.pos.x - m.pos.x;
+          const dy = (p.pos.y + 1.0) - m.pos.y;
+          const dz = p.pos.z - m.pos.z;
+          if (dx*dx + dy*dy + dz*dz < MISSILE_HIT_RADIUS * MISSILE_HIT_RADIUS) {
+            hitPlayer = p;
+            break;
+          }
+        }
+        let hitWorld = false;
+        if (!hitPlayer) {
+          for (const c of colliders) {
+            if (m.pos.x > c.min.x && m.pos.x < c.max.x &&
+                m.pos.y > c.min.y && m.pos.y < c.max.y &&
+                m.pos.z > c.min.z && m.pos.z < c.max.z) {
+              hitWorld = true; break;
+            }
+          }
+        }
+        if (hitPlayer) {
+          hitPlayer.hearts = Math.max(0, hitPlayer.hearts - MISSILE_DAMAGE);
+          renderHearts(hitPlayer);
+          if (hitPlayer.hearts <= 0) respawnPlayer(hitPlayer);
+          scene.remove(m.mesh);
+          missiles.splice(i, 1);
+        } else if (hitWorld || m.age >= MISSILE_LIFETIME) {
+          scene.remove(m.mesh);
+          missiles.splice(i, 1);
+        }
+      }
     }
 
     function updatePickups(t) {
@@ -1238,8 +1465,8 @@
       }
     }
 
-    function updatePistolPickups(t, dt) {
-      for (const pu of pistolPickups) {
+    function updateWeaponPickups(t, dt) {
+      for (const pu of weaponPickups) {
         if (pu.taken) {
           if (t >= pu.respawnAt) {
             pu.taken = false;
@@ -1251,15 +1478,45 @@
         pu.mesh.rotation.y = t * 1.6;
         pu.mesh.position.y = pu.home.y + Math.sin(t * 2.2) * 0.1;
         for (const p of players) {
-          if (p.pistol) continue;
+          if (p.weapon === pu.kind) continue; // already holding it
           const dx = p.pos.x - pu.mesh.position.x;
           const dy = (p.pos.y + 1.0) - pu.mesh.position.y;
           const dz = p.pos.z - pu.mesh.position.z;
           if (dx*dx + dy*dy + dz*dz < PICKUP_RADIUS * PICKUP_RADIUS) {
-            p.pistol = true;
+            p.weapon = pu.kind;
+            updateWeaponVisuals(p);
             renderInventory(p);
             pu.taken = true;
-            pu.respawnAt = t + PISTOL_RESPAWN_DELAY;
+            pu.respawnAt = t + WEAPON_RESPAWN_DELAY;
+            scene.remove(pu.mesh);
+            break;
+          }
+        }
+      }
+    }
+
+    function updateMissilePickups(t, dt) {
+      for (const pu of missilePickups) {
+        if (pu.taken) {
+          if (t >= pu.respawnAt) {
+            pu.taken = false;
+            pu.mesh.position.copy(pu.home);
+            scene.add(pu.mesh);
+          }
+          continue;
+        }
+        pu.mesh.rotation.y = t * 1.4;
+        pu.mesh.position.y = pu.home.y + Math.sin(t * 2.0) * 0.1;
+        for (const p of players) {
+          if (p.missiles >= MAX_MISSILES) continue;
+          const dx = p.pos.x - pu.mesh.position.x;
+          const dy = (p.pos.y + 1.0) - pu.mesh.position.y;
+          const dz = p.pos.z - pu.mesh.position.z;
+          if (dx*dx + dy*dy + dz*dz < PICKUP_RADIUS * PICKUP_RADIUS) {
+            p.missiles = MAX_MISSILES;
+            renderInventory(p);
+            pu.taken = true;
+            pu.respawnAt = t + MISSILE_RESPAWN_DELAY;
             scene.remove(pu.mesh);
             break;
           }
@@ -1306,7 +1563,7 @@
         }
 
         if (hitPlayer) {
-          hitPlayer.hearts = Math.max(0, hitPlayer.hearts - 1);
+          hitPlayer.hearts = Math.max(0, hitPlayer.hearts - (b.damage || 1));
           renderHearts(hitPlayer);
           if (hitPlayer.hearts <= 0) respawnPlayer(hitPlayer);
           scene.remove(b.mesh);
@@ -1819,6 +2076,7 @@
         if (e.code === p.keys.left)  { tryAirFlip(p, 'sideL'); tryDirectionalRoll(p, 'left'); }
         if (e.code === p.keys.right) { tryAirFlip(p, 'sideR'); tryDirectionalRoll(p, 'right'); }
         if (e.code === p.keys.throw) throwBall(p);
+        if (e.code === p.keys.missile) fireMissile(p);
       }
       if (e.code === 'KeyR') players.forEach(resetPlayer);
       if (e.code === 'KeyH') {
@@ -1860,7 +2118,9 @@
       }
       updatePickups(now / 1000);
       updateHeartPickups(now / 1000, dt);
-      updatePistolPickups(now / 1000, dt);
+      updateWeaponPickups(now / 1000, dt);
+      updateMissilePickups(now / 1000, dt);
+      updateMissiles(dt);
       updateBalls(dt);
       renderSplit();
       requestAnimationFrame(animate);
