@@ -67,8 +67,8 @@
 <body>
   <div id="info">
     <b>Schlappen Jr. Parkour - Local Split-Screen</b><br>
-    <b>P1:</b> WS=vor/zurück, AD=drehen, Shift=Sprint, Space=Sprung, Q=Werfen, E=Rakete<br>
-    <b>P2:</b> ↑↓=vor/zurück, ←→=drehen, M=Sprint, Enter=Sprung, -=Werfen, .=Rakete<br>
+    <b>P1:</b> WS=vor/zurück, AD=drehen, Shift=Sprint, Space=Sprung, Q=Werfen, Ä=Rakete<br>
+    <b>P2:</b> ↑↓=vor/zurück, ←→=drehen, M=Sprint, Enter=Sprung, -=Werfen, 2=Rakete<br>
     Waffen-Pickups: Pistole 🔫, Scharfschütze 🎯, Rakete 🚀 (homing)<br>
     In der Luft: vor = Frontflip &nbsp; zurück = Backflip &nbsp; links/rechts = Sideflip<br>
     Doppel-Tap der Richtung am Boden = Dive Roll &nbsp; in der Luft = Double Flip<br>
@@ -76,7 +76,7 @@
     An Kante: vor = Hochziehen &nbsp; Springen/zurück = Loslassen &nbsp; R = Reset
   </div>
   <div id="hint">H = Steuerung anzeigen</div>
-  <div id="version">build 2026-05-13 #weapons</div>
+  <div id="version">build 2026-05-13 #missile-keys</div>
   <div id="splitDivider"></div>
   <div id="hearts1" class="hearts"></div>
   <div id="hearts2" class="hearts"></div>
@@ -949,11 +949,11 @@
     const players = [
       createPlayer(new THREE.Vector3(-1.5, 2, 0), 0x1f6fc8, {
         jump: 'Space', fwd: 'KeyW', back: 'KeyS', left: 'KeyA', right: 'KeyD', sprint: 'ShiftLeft',
-        throw: 'KeyQ', missile: 'KeyE', invEl: 'inv1',
+        throw: 'KeyQ', missile: 'Quote', invEl: 'inv1',
       }, 'hearts1'),
       createPlayer(new THREE.Vector3(1.5, 2, 0),  0xc83a3a, {
         jump: 'Enter', fwd: 'ArrowUp', back: 'ArrowDown', left: 'ArrowLeft', right: 'ArrowRight', sprint: 'KeyM',
-        throw: 'Minus', missile: 'Period', invEl: 'inv2',
+        throw: 'Minus', missile: 'Digit2', invEl: 'inv2',
       }, 'hearts2'),
     ];
 
